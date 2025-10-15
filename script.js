@@ -2013,59 +2013,6 @@ function buildRouteSummaryForShare(route) {
     };
 }
 
-// 收集與指定標註點相關的所有路線摘要（包含作為起點與作為終點）
-function collectRelatedRouteSummaries(marker, maxTotal = 10) {
-    try {
-        const summaries = [];
-        const dedup = new Set();
-
-        // 作為起點：直接來自該標註的 routeRecords
-        if (Array.isArray(marker.routeRecords) && marker.routeRecords.length > 0) {
-            const sortedStartRoutes = marker.routeRecords.slice().sort((a, b) => {
-                const ca = (typeof a.createdAt === 'number') ? a.createdAt : new Date(a.createdAt || 0).getTime();
-                const cb = (typeof b.createdAt === 'number') ? b.createdAt : new Date(b.createdAt || 0).getTime();
-                return cb - ca;
-            });
-            for (const r of sortedStartRoutes) {
-                if (summaries.length >= maxTotal) break;
-                const s = buildRouteSummaryForShare(r);
-                if (!s) continue;
-                const key = `${s.startMarkerName || ''}|${s.targetMarkerName || ''}|${Math.round(s.distance || 0)}|${s.createdAt || ''}`;
-                if (!dedup.has(key)) {
-                    summaries.push(s);
-                    dedup.add(key);
-                }
-            }
-        }
-
-        // 作為終點：掃描其他標註的 routeRecords，找出終點為此標註的路線
-        if (Array.isArray(window.markers)) {
-            for (const m of window.markers) {
-                if (!m || m.id === marker.id || !Array.isArray(m.routeRecords)) continue;
-                for (const r of m.routeRecords) {
-                    if (r && r.targetMarkerId === marker.id) {
-                        if (summaries.length >= maxTotal) break;
-                        const s = buildRouteSummaryForShare(r);
-                        if (!s) continue;
-                        const key = `${s.startMarkerName || ''}|${s.targetMarkerName || ''}|${Math.round(s.distance || 0)}|${s.createdAt || ''}`;
-                        if (!dedup.has(key)) {
-                            summaries.push(s);
-                            dedup.add(key);
-                        }
-                    }
-                }
-                if (summaries.length >= maxTotal) break;
-            }
-        }
-
-        // 篩除不完整的摘要並限制總數
-        return summaries.filter(s => Array.isArray(s.points) && s.points.length >= 2).slice(0, maxTotal);
-    } catch (e) {
-        console.warn('collectRelatedRouteSummaries 失敗：', e);
-        return [];
-    }
-}
-
 async function copyToClipboard(text) {
     try {
         await navigator.clipboard.writeText(text);
@@ -2092,54 +2039,6 @@ async function tryWebShare(title, text, url) {
         }
     }
     return false;
-}
-
-// 顯示可點擊的共享連結對話框（提供複製與開啟）
-function showShareDialog(title, url) {
-    try {
-        // 移除舊對話框
-        const existing = document.getElementById('shareLinkDialog');
-        if (existing) existing.remove();
-        const dlg = document.createElement('div');
-        dlg.id = 'shareLinkDialog';
-        dlg.style.cssText = `
-            position: fixed; left: 50%; top: 20px; transform: translateX(-50%);
-            background: rgba(30,30,30,0.95); color: #fff; padding: 12px 16px;
-            border-radius: 10px; z-index: 20000; box-shadow: 0 8px 20px rgba(0,0,0,0.25);
-            max-width: 90vw; display: flex; flex-direction: column; gap: 8px;
-        `;
-        const header = document.createElement('div');
-        header.style.cssText = 'font-size: 15px; font-weight: 600;';
-        header.textContent = title || '分享連結';
-        const linkRow = document.createElement('div');
-        linkRow.style.cssText = 'display:flex; gap:8px; align-items:center; flex-wrap:wrap;';
-        const anchor = document.createElement('a');
-        anchor.href = url;
-        anchor.textContent = url;
-        anchor.style.cssText = 'color:#4FC3F7; text-decoration: underline; word-break: break-all;';
-        anchor.target = '_blank';
-        const copyBtn = document.createElement('button');
-        copyBtn.textContent = '複製';
-        copyBtn.style.cssText = 'padding:4px 8px; font-size:12px; background:#4CAF50; color:#fff; border:none; border-radius:6px;';
-        copyBtn.onclick = () => copyToClipboard(url);
-        const openBtn = document.createElement('button');
-        openBtn.textContent = '在新分頁開啟';
-        openBtn.style.cssText = 'padding:4px 8px; font-size:12px; background:#2196F3; color:#fff; border:none; border-radius:6px;';
-        openBtn.onclick = () => { try { window.open(url, '_blank'); } catch (e) {} };
-        const closeBtn = document.createElement('button');
-        closeBtn.textContent = '關閉';
-        closeBtn.style.cssText = 'padding:4px 8px; font-size:12px; background:#9E9E9E; color:#fff; border:none; border-radius:6px; align-self:flex-end;';
-        closeBtn.onclick = () => { try { dlg.remove(); } catch (e) {} };
-        linkRow.appendChild(anchor);
-        linkRow.appendChild(copyBtn);
-        linkRow.appendChild(openBtn);
-        dlg.appendChild(header);
-        dlg.appendChild(linkRow);
-        dlg.appendChild(closeBtn);
-        document.body.appendChild(dlg);
-    } catch (e) {
-        console.warn('顯示分享連結對話框失敗：', e);
-    }
 }
 
 function shareMarkerById(markerId) {
@@ -2184,86 +2083,12 @@ function shareMarkerById(markerId) {
         route: (selectedRouteIndex !== null ? { index: selectedRouteIndex, action: 'use' } : null)
         // 圖片內容與完整路線資料不直接包含，避免連結過長
     };
-    // 附帶所有與此標註相關的路線摘要（起點/終點），並優先包含目前選定路線
-    const relatedSummaries = collectRelatedRouteSummaries(marker, 10);
     if (selectedRouteSummary) {
-        // 保證選定路線在最前面
-        const dedupKey = (s) => `${s.startMarkerName || ''}|${s.targetMarkerName || ''}|${Math.round(s.distance || 0)}|${s.createdAt || ''}`;
-        const firstKey = dedupKey(selectedRouteSummary);
-        const rest = relatedSummaries.filter(s => dedupKey(s) !== firstKey);
-        payload.routes = [selectedRouteSummary, ...rest];
-    } else if (relatedSummaries.length > 0) {
-        payload.routes = relatedSummaries;
+        payload.routes = [selectedRouteSummary];
     }
     const url = buildShareLink(payload);
     tryWebShare('分享標註點', `${marker.icon} ${marker.name}`, url)
-        .then((shared) => { if (!shared) { copyToClipboard(url); } showShareDialog('分享標註點', url); });
-}
-
-// 分享整個組別的內容（群組下的所有標註點與其相關路線摘要）
-function shareGroupById(groupId) {
-    const group = groups.find(g => g.id === groupId);
-    if (!group) {
-        showNotification('❌ 找不到要分享的組別', 'error');
-        return;
-    }
-    const groupMarkers = markers.filter(m => m.groupId === groupId);
-    if (groupMarkers.length === 0) {
-        showNotification('⚠️ 此組別沒有標註點可分享', 'warning');
-        return;
-    }
-    const markersPayload = groupMarkers.map(m => ({
-        name: m.name || '',
-        description: m.description || '',
-        lat: m.lat,
-        lng: m.lng,
-        color: m.color || 'red',
-        icon: m.icon || '📍',
-        routes: collectRelatedRouteSummaries(m, 10)
-    }));
-    const payload = {
-        type: 'group',
-        groupName: group.name,
-        zoom: (map && typeof map.getZoom === 'function') ? map.getZoom() : null,
-        markers: markersPayload
-    };
-    const url = buildShareLink(payload);
-    tryWebShare('分享組別', `📁 ${group.name}（${groupMarkers.length} 標註）`, url)
-        .then((shared) => { if (!shared) { copyToClipboard(url); } showShareDialog('分享組別', url); });
-}
-
-// 分享指定群組（子群組）的內容
-function shareSubgroupById(groupId, subgroupId) {
-    const group = groups.find(g => g.id === groupId);
-    const subgroup = group?.subgroups?.find(sg => sg.id === subgroupId);
-    if (!group || !subgroup) {
-        showNotification('❌ 找不到要分享的群組', 'error');
-        return;
-    }
-    const subgroupMarkers = markers.filter(m => m.groupId === groupId && m.subgroupId === subgroupId);
-    if (subgroupMarkers.length === 0) {
-        showNotification('⚠️ 此群組沒有標註點可分享', 'warning');
-        return;
-    }
-    const markersPayload = subgroupMarkers.map(m => ({
-        name: m.name || '',
-        description: m.description || '',
-        lat: m.lat,
-        lng: m.lng,
-        color: m.color || 'red',
-        icon: m.icon || '📍',
-        routes: collectRelatedRouteSummaries(m, 10)
-    }));
-    const payload = {
-        type: 'subgroup',
-        groupName: group.name,
-        subgroupName: subgroup.name,
-        zoom: (map && typeof map.getZoom === 'function') ? map.getZoom() : null,
-        markers: markersPayload
-    };
-    const url = buildShareLink(payload);
-    tryWebShare('分享群組', `🗂️ ${group.name} > ${subgroup.name}（${subgroupMarkers.length} 標註）`, url)
-        .then((shared) => { if (!shared) { copyToClipboard(url); } showShareDialog('分享群組', url); });
+        .then((shared) => { if (!shared) copyToClipboard(url); });
 }
 
 function shareCurrentLocation() {
@@ -2289,7 +2114,7 @@ function shareCurrentLocation() {
     };
     const url = buildShareLink(payload);
     tryWebShare('分享我的位置', `座標：${latlng.lat.toFixed(6)}, ${latlng.lng.toFixed(6)}`, url)
-        .then((shared) => { if (!shared) { copyToClipboard(url); } showShareDialog('分享我的位置', url); });
+        .then((shared) => { if (!shared) copyToClipboard(url); });
 }
 
 function addTemporarySharedLocationMarker(lat, lng) {
@@ -2301,29 +2126,6 @@ function addTemporarySharedLocationMarker(lat, lng) {
     </div>`).openPopup();
     map.setView([lat, lng], Math.max(map.getZoom(), 15), { animate: true });
     setTimeout(() => { try { map.removeLayer(temp); } catch {} }, 30000);
-}
-
-// 顯示臨時共享標註點（避免未保存前沒有地圖標記）
-function addTemporarySharedMarker(payload) {
-    try {
-        const color = payload.color || 'red';
-        const iconChar = payload.icon || '📍';
-        const tempIcon = createCustomMarkerIcon(color, iconChar);
-        const temp = L.marker([payload.lat, payload.lng], { icon: tempIcon }).addTo(map);
-        const name = payload.name || '共享標註';
-        temp.bindPopup(`<div style="text-align:center;">
-            <div style="font-size:16px; margin-bottom:6px;">${iconChar} ${name}</div>
-            <div style="font-size:12px; color:#555;">${payload.lat.toFixed(6)}, ${payload.lng.toFixed(6)}</div>
-        </div>`).openPopup();
-        // 套用縮放（若提供）或至少顯示到 16 級
-        const zoom = (typeof payload.zoom === 'number' ? payload.zoom : null);
-        const targetZoom = zoom ? Math.max(map.getZoom(), zoom) : Math.max(map.getZoom(), 16);
-        map.setView([payload.lat, payload.lng], targetZoom, { animate: true });
-        // 避免暫時標記殘留過久
-        setTimeout(() => { try { map.removeLayer(temp); } catch {} }, 60000);
-    } catch (e) {
-        console.warn('顯示臨時共享標註失敗：', e);
-    }
 }
 
 function prefillMarkerFormFromPayload(payload) {
@@ -2491,154 +2293,6 @@ function saveSharedMarkerAndRoutes(payload) {
     }
 }
 
-// 引導：顯示「一鍵保存共享組別/群組內容」提示
-function showSaveSharedGroupPrompt(payload) {
-    try {
-        const existing = document.getElementById('saveSharedGroupPrompt');
-        if (existing) existing.remove();
-        const prompt = document.createElement('div');
-        prompt.id = 'saveSharedGroupPrompt';
-        prompt.style.cssText = `
-            position: fixed;
-            left: 50%;
-            bottom: 24px;
-            transform: translateX(-50%);
-            background: rgba(32, 32, 32, 0.92);
-            color: #fff;
-            padding: 10px 14px;
-            border-radius: 10px;
-            font-size: 14px;
-            z-index: 20000;
-            box-shadow: 0 6px 18px rgba(0,0,0,0.2);
-            display: flex;
-            gap: 10px;
-            align-items: center;
-        `;
-        const label = document.createElement('span');
-        label.textContent = payload.type === 'subgroup' ? '已載入共享群組內容' : '已載入共享組別內容';
-        const saveBtn = document.createElement('button');
-        saveBtn.textContent = '一鍵保存';
-        saveBtn.style.cssText = 'padding: 6px 10px; font-size: 13px; background:#4CAF50; color:#fff; border:none; border-radius:6px;';
-        const cancelBtn = document.createElement('button');
-        cancelBtn.textContent = '取消';
-        cancelBtn.style.cssText = 'padding: 6px 10px; font-size: 13px; background:#9E9E9E; color:#fff; border:none; border-radius:6px;';
-        saveBtn.addEventListener('click', () => {
-            try { saveSharedGroupOrSubgroup(payload); } catch (e) { console.error(e); }
-            try { prompt.remove(); } catch (e) {}
-        });
-        cancelBtn.addEventListener('click', () => { try { prompt.remove(); } catch (e) {} });
-        prompt.appendChild(label);
-        prompt.appendChild(saveBtn);
-        prompt.appendChild(cancelBtn);
-        document.body.appendChild(prompt);
-    } catch (e) {
-        console.warn('顯示群組保存提示失敗：', e);
-    }
-}
-
-// 程式化：將共享的組別/群組內容保存為正式資料
-function saveSharedGroupOrSubgroup(payload) {
-    try {
-        const isSubgroup = payload.type === 'subgroup';
-        const groupName = payload.groupName || '共享組別';
-        const subgroupName = isSubgroup ? (payload.subgroupName || '共享群組') : null;
-        // 1) 建立/取得組別與群組
-        let group = groups.find(g => g.name === groupName);
-        if (!group) {
-            group = new Group('group_' + Date.now().toString(36), groupName);
-            groups.push(group);
-        }
-        let subgroup = null;
-        if (isSubgroup) {
-            subgroup = group.subgroups?.find(sg => sg.name === subgroupName) || null;
-            if (!subgroup) {
-                subgroup = new Subgroup('subgroup_' + Date.now().toString(36), subgroupName, group.id);
-                group.addSubgroup(subgroup);
-            }
-        }
-
-        // 2) 依序建立標註點
-        const sharedMarkers = Array.isArray(payload.markers) ? payload.markers : [];
-        const createdMarkers = [];
-        const nameMap = new Map();
-        for (const m of sharedMarkers) {
-            const marker = new Marker(
-                Date.now().toString() + Math.random().toString(36).slice(2, 6),
-                m.name || '共享標註',
-                m.description || '',
-                m.lat,
-                m.lng,
-                group.id,
-                subgroup ? subgroup.id : null,
-                m.color || 'red',
-                m.icon || '📍',
-                null
-            );
-            markers.push(marker);
-            group.addMarker(marker);
-            if (subgroup) subgroup.addMarker(marker);
-            addMarkerToMap(marker);
-            createdMarkers.push(marker);
-            nameMap.set(marker.name, marker);
-        }
-
-        // 3) 匯入路線（避免重複，優先將路線掛在其起點標註上）
-        const dedup = new Set();
-        for (let i = 0; i < sharedMarkers.length; i++) {
-            const markerSummary = sharedMarkers[i];
-            const hostMarker = createdMarkers[i];
-            const routes = Array.isArray(markerSummary.routes) ? markerSummary.routes : [];
-            for (const r of routes) {
-                const key = `${r.startMarkerName || ''}|${r.targetMarkerName || ''}|${Math.round(r.distance || 0)}|${r.createdAt || ''}`;
-                if (dedup.has(key)) continue;
-                dedup.add(key);
-                // 尋找應該掛載的起點標註
-                let attachMarker = null;
-                if (r.startMarkerName && nameMap.has(r.startMarkerName)) {
-                    attachMarker = nameMap.get(r.startMarkerName);
-                } else {
-                    // 若起點不在共享內容內，則掛在當前標註避免遺失
-                    attachMarker = hostMarker;
-                }
-                const coordinates = Array.isArray(r.points) ? r.points.map(p => ({ lat: p.lat, lng: p.lng, timestamp: Date.now() })) : [];
-                const added = attachMarker.addRoute({
-                    name: r.name || '共享路線',
-                    coordinates,
-                    distance: r.distance || 0,
-                    duration: r.duration || 0
-                });
-                if (r.color) added.color = r.color;
-                if (r.targetMarkerName) added.targetMarkerName = r.targetMarkerName;
-                if (r.startMarkerName) added.startMarkerName = r.startMarkerName;
-            }
-        }
-
-        // 4) 保存並更新 UI
-        saveMarkersToStorage();
-        updateMarkersList();
-        updateGroupsList();
-        // 打開第一個標註的彈窗供使用者確認
-        try {
-            if (createdMarkers[0] && createdMarkers[0].leafletMarker) {
-                updateMarkerPopup(createdMarkers[0]);
-                createdMarkers[0].leafletMarker.openPopup();
-            }
-        } catch (e) {}
-        const routeCount = dedup.size;
-        showNotification(`✅ 已保存共享${isSubgroup ? '群組' : '組別'}內容（標註 ${createdMarkers.length}，路線 ${routeCount}）`, 'success');
-        // 視角與縮放
-        if (payload.zoom && typeof map !== 'undefined' && map && typeof map.setView === 'function') {
-            try {
-                const first = createdMarkers[0];
-                if (first) map.setView([first.lat, first.lng], payload.zoom, { animate: true });
-            } catch (e) {}
-        }
-    } catch (error) {
-        console.error('保存共享組別/群組內容失敗：', error);
-        showNotification('❌ 保存共享組別/群組內容失敗', 'error');
-    }
-}
-
 function handleSharedLinkOnInit() {
     try {
         const params = new URLSearchParams(window.location.search);
@@ -2647,8 +2301,6 @@ function handleSharedLinkOnInit() {
             const jsonStr = base64DecodeUnicode(raw);
             const payload = JSON.parse(jsonStr);
             if (payload && payload.type === 'marker') {
-                // 顯示臨時標註以避免點選連結後未顯示
-                try { addTemporarySharedMarker(payload); } catch (e) {}
                 prefillMarkerFormFromPayload(payload);
                 // 若有路線資料，顯示一鍵保存提示以正式保存標註與路線
                 try {
@@ -2687,39 +2339,6 @@ function handleSharedLinkOnInit() {
                         }
                     }
                 } catch (e) {}
-            } else if (payload && (payload.type === 'group' || payload.type === 'subgroup')) {
-                try {
-                    const markersArray = Array.isArray(payload.markers) ? payload.markers : [];
-                    const tempLayers = [];
-                    const boundsPoints = [];
-                    for (const m of markersArray) {
-                        const icon = createCustomMarkerIcon(m.color || 'red', m.icon || '📍');
-                        const layer = L.marker([m.lat, m.lng], { icon }).addTo(map);
-                        layer.bindPopup(`<div style="text-align:center; font-size:14px;">${m.icon || '📍'} ${m.name || '共享標註'}</div>`);
-                        tempLayers.push(layer);
-                        boundsPoints.push([m.lat, m.lng]);
-                    }
-                    if (boundsPoints.length > 0) {
-                        try { map.fitBounds(L.latLngBounds(boundsPoints), { padding: [20, 20] }); } catch (e) {}
-                    }
-                    // 顯示保存提示
-                    showSaveSharedGroupPrompt(payload);
-                    // 根據名稱嘗試套用顯示過濾
-                    try {
-                        if (payload.type === 'subgroup') {
-                            const grp = groups.find(g => g.name === payload.groupName);
-                            const sub = grp?.subgroups?.find(sg => sg.name === payload.subgroupName);
-                            if (grp && sub && typeof selectGroup === 'function') selectGroup(grp.id, sub.id);
-                        } else if (payload.type === 'group') {
-                            const grp = groups.find(g => g.name === payload.groupName);
-                            if (grp && typeof selectGroup === 'function') selectGroup(grp.id);
-                        }
-                    } catch (e) {}
-                    // 自動清除臨時圖層
-                    setTimeout(() => { tempLayers.forEach(l => { try { map.removeLayer(l); } catch {} }); }, 60000);
-                } catch (e) {
-                    console.warn('載入共享組別/群組內容失敗：', e);
-                }
             } else if (payload && payload.type === 'location') {
                 addTemporarySharedLocationMarker(payload.lat, payload.lng);
                 // 若指定縮放層級則套用
@@ -2745,8 +2364,6 @@ function handleSharedLinkOnInit() {
 // 將分享函式暴露到全域，供內嵌 onclick 使用
 window.shareMarkerById = shareMarkerById;
 window.shareCurrentLocation = shareCurrentLocation;
-window.shareGroupById = shareGroupById;
-window.shareSubgroupById = shareSubgroupById;
 
 // 圖片處理相關函數
 // 圖片壓縮函數
@@ -6472,7 +6089,6 @@ function updateGroupsList() {
                 <button onclick="addSubgroup('${group.id}')">新增群組</button>
                 <button onclick="deleteGroup('${group.id}')">刪除</button>
                 <button onclick="showGroupDetailsModal('${group.id}')" title="查看組別詳情">詳情</button>
-                <button onclick="shareGroupById('${group.id}')" title="分享組別內容">分享</button>
             </div>
         `;
 
@@ -6504,7 +6120,6 @@ function updateGroupsList() {
                     <button onclick="editSubgroupName('${group.id}', '${subgroup.id}')">編輯</button>
                     <button onclick="deleteSubgroup('${group.id}', '${subgroup.id}')">刪除</button>
                     <button onclick="showGroupDetailsModal('${group.id}', '${subgroup.id}')" title="查看群組詳情">詳情</button>
-                    <button onclick="shareSubgroupById('${group.id}', '${subgroup.id}')" title="分享群組內容">分享</button>
                 </div>
             `;
 
