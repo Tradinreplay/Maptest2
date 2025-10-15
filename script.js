@@ -2094,6 +2094,54 @@ async function tryWebShare(title, text, url) {
     return false;
 }
 
+// 顯示可點擊的共享連結對話框（提供複製與開啟）
+function showShareDialog(title, url) {
+    try {
+        // 移除舊對話框
+        const existing = document.getElementById('shareLinkDialog');
+        if (existing) existing.remove();
+        const dlg = document.createElement('div');
+        dlg.id = 'shareLinkDialog';
+        dlg.style.cssText = `
+            position: fixed; left: 50%; top: 20px; transform: translateX(-50%);
+            background: rgba(30,30,30,0.95); color: #fff; padding: 12px 16px;
+            border-radius: 10px; z-index: 20000; box-shadow: 0 8px 20px rgba(0,0,0,0.25);
+            max-width: 90vw; display: flex; flex-direction: column; gap: 8px;
+        `;
+        const header = document.createElement('div');
+        header.style.cssText = 'font-size: 15px; font-weight: 600;';
+        header.textContent = title || '分享連結';
+        const linkRow = document.createElement('div');
+        linkRow.style.cssText = 'display:flex; gap:8px; align-items:center; flex-wrap:wrap;';
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.textContent = url;
+        anchor.style.cssText = 'color:#4FC3F7; text-decoration: underline; word-break: break-all;';
+        anchor.target = '_blank';
+        const copyBtn = document.createElement('button');
+        copyBtn.textContent = '複製';
+        copyBtn.style.cssText = 'padding:4px 8px; font-size:12px; background:#4CAF50; color:#fff; border:none; border-radius:6px;';
+        copyBtn.onclick = () => copyToClipboard(url);
+        const openBtn = document.createElement('button');
+        openBtn.textContent = '在新分頁開啟';
+        openBtn.style.cssText = 'padding:4px 8px; font-size:12px; background:#2196F3; color:#fff; border:none; border-radius:6px;';
+        openBtn.onclick = () => { try { window.open(url, '_blank'); } catch (e) {} };
+        const closeBtn = document.createElement('button');
+        closeBtn.textContent = '關閉';
+        closeBtn.style.cssText = 'padding:4px 8px; font-size:12px; background:#9E9E9E; color:#fff; border:none; border-radius:6px; align-self:flex-end;';
+        closeBtn.onclick = () => { try { dlg.remove(); } catch (e) {} };
+        linkRow.appendChild(anchor);
+        linkRow.appendChild(copyBtn);
+        linkRow.appendChild(openBtn);
+        dlg.appendChild(header);
+        dlg.appendChild(linkRow);
+        dlg.appendChild(closeBtn);
+        document.body.appendChild(dlg);
+    } catch (e) {
+        console.warn('顯示分享連結對話框失敗：', e);
+    }
+}
+
 function shareMarkerById(markerId) {
     const marker = markers.find(m => m.id === markerId);
     if (!marker) {
@@ -2149,7 +2197,7 @@ function shareMarkerById(markerId) {
     }
     const url = buildShareLink(payload);
     tryWebShare('分享標註點', `${marker.icon} ${marker.name}`, url)
-        .then((shared) => { if (!shared) copyToClipboard(url); });
+        .then((shared) => { if (!shared) { copyToClipboard(url); } showShareDialog('分享標註點', url); });
 }
 
 // 分享整個組別的內容（群組下的所有標註點與其相關路線摘要）
@@ -2181,7 +2229,7 @@ function shareGroupById(groupId) {
     };
     const url = buildShareLink(payload);
     tryWebShare('分享組別', `📁 ${group.name}（${groupMarkers.length} 標註）`, url)
-        .then((shared) => { if (!shared) copyToClipboard(url); });
+        .then((shared) => { if (!shared) { copyToClipboard(url); } showShareDialog('分享組別', url); });
 }
 
 // 分享指定群組（子群組）的內容
@@ -2215,7 +2263,7 @@ function shareSubgroupById(groupId, subgroupId) {
     };
     const url = buildShareLink(payload);
     tryWebShare('分享群組', `🗂️ ${group.name} > ${subgroup.name}（${subgroupMarkers.length} 標註）`, url)
-        .then((shared) => { if (!shared) copyToClipboard(url); });
+        .then((shared) => { if (!shared) { copyToClipboard(url); } showShareDialog('分享群組', url); });
 }
 
 function shareCurrentLocation() {
@@ -2241,7 +2289,7 @@ function shareCurrentLocation() {
     };
     const url = buildShareLink(payload);
     tryWebShare('分享我的位置', `座標：${latlng.lat.toFixed(6)}, ${latlng.lng.toFixed(6)}`, url)
-        .then((shared) => { if (!shared) copyToClipboard(url); });
+        .then((shared) => { if (!shared) { copyToClipboard(url); } showShareDialog('分享我的位置', url); });
 }
 
 function addTemporarySharedLocationMarker(lat, lng) {
