@@ -2041,7 +2041,69 @@ async function tryWebShare(title, text, url) {
     return false;
 }
 
-function shareMarkerById(markerId) {
+// 建立含圖片與路線的單一標註分享資料（與匯入格式相容）
+async function buildFullMarkerShareData(marker) {
+    try {
+        // 壓縮圖片資料到 ~50KB 以降低檔案大小
+        let compressedImageData = null;
+        if (marker.imageData) {
+            if (Array.isArray(marker.imageData)) {
+                compressedImageData = await Promise.all(
+                    marker.imageData.map(async (imageData) => {
+                        if (typeof imageData === 'string' && imageData.startsWith('data:image/')) {
+                            try { return await compressImage(imageData, 50); } catch (e) { return imageData; }
+                        }
+                        return imageData;
+                    })
+                );
+            } else if (typeof marker.imageData === 'string' && marker.imageData.startsWith('data:image/')) {
+                try { compressedImageData = await compressImage(marker.imageData, 50); } catch (e) { compressedImageData = marker.imageData; }
+            } else {
+                compressedImageData = marker.imageData;
+            }
+        }
+
+        const group = groups ? groups.find(g => g.id === marker.groupId) : null;
+        const subgroup = group && group.subgroups ? group.subgroups.find(sg => sg.id === marker.subgroupId) : null;
+
+        const exportMarker = {
+            id: marker.id,
+            name: marker.name,
+            description: marker.description,
+            lat: marker.lat,
+            lng: marker.lng,
+            groupId: marker.groupId,
+            subgroupId: marker.subgroupId || null,
+            color: marker.color || 'red',
+            icon: marker.icon || '📍',
+            imageData: compressedImageData || null,
+            routeRecords: marker.routeRecords || []
+        };
+
+        const exportGroup = group ? {
+            id: group.id,
+            name: group.name,
+            subgroups: subgroup ? [{ id: subgroup.id, name: subgroup.name, groupId: group.id }] : []
+        } : { id: 'group_' + Date.now().toString(36), name: '共享群組', subgroups: [] };
+
+        return {
+            version: '1.0',
+            exportDate: new Date().toISOString(),
+            markers: [exportMarker],
+            groups: [exportGroup]
+        };
+    } catch (e) {
+        console.error('buildFullMarkerShareData 失敗：', e);
+        return {
+            version: '1.0',
+            exportDate: new Date().toISOString(),
+            markers: [],
+            groups: []
+        };
+    }
+}
+
+async function shareMarkerById(markerId) {
     const marker = markers.find(m => m.id === markerId);
     if (!marker) {
         showNotification('❌ 找不到要分享的標註點', 'error');
@@ -2087,6 +2149,68 @@ function shareMarkerById(markerId) {
         payload.routes = [selectedRouteSummary];
     }
     const url = buildShareLink(payload);
+
+    // 先嘗試以檔案方式分享（含圖片與路徑），不支援時再回退到連結
+    try {
+        const fullData = await buildFullMarkerShareData(marker);
+        let dataStr;
+        try {
+            dataStr = JSON.stringify(fullData, null, 2);
+        } catch (jsonErr) {
+            console.warn('分享資料序列化失敗，改用安全序列化：', jsonErr);
+            const seen = new WeakSet();
+            const replacer = (key, value) => {
+                if (typeof value === 'object' && value !== null) {
+                    if (seen.has(value)) return undefined;
+                    if (value._map || value._leaflet_id || value._layers || value._path) return undefined;
+                    if (typeof value.addTo === 'function' || typeof value.on === 'function') return undefined;
+                    seen.add(value);
+                }
+                return value;
+            };
+            dataStr = JSON.stringify(fullData, replacer, 2);
+        }
+
+        const blob = new Blob([dataStr], { type: 'application/json' });
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        const timeStr = now.toTimeString().split(' ')[0].replace(/:/g, '-');
+        const safeName = (marker.name || '標註').replace(/[\\/:*?"<>|]/g, '_');
+        const fileName = `分享標註_${safeName}_${year}-${month}-${day}_${timeStr}.json`;
+        const file = new File([blob], fileName, { type: 'application/json' });
+
+        const canShareFiles = typeof navigator !== 'undefined' && navigator.canShare && navigator.canShare({ files: [file] });
+        if (canShareFiles && navigator.share) {
+            try {
+                await navigator.share({ title: '分享標註（含圖片與路徑）', text: `${marker.icon} ${marker.name}`, files: [file] });
+                showNotification('📤 已透過系統分享檔案（含圖片與路徑）', 'success');
+                return;
+            } catch (e) {
+                console.warn('檔案分享失敗，改用下載 + 連結分享：', e);
+            }
+        }
+
+        // 回退：觸發檔案下載（含圖片與路徑）
+        try {
+            const urlObj = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = urlObj;
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(urlObj);
+            showNotification('📥 已下載分享檔案（含圖片與路徑）', 'info');
+        } catch (e) {
+            console.warn('檔案下載回退失敗：', e);
+        }
+    } catch (e) {
+        console.warn('建立完整分享資料失敗，僅提供連結分享：', e);
+    }
+
+    // 一律提供連結分享作為備援（不含圖片，避免連結過長）
     tryWebShare('分享標註點', `${marker.icon} ${marker.name}`, url)
         .then((shared) => { if (!shared) copyToClipboard(url); });
 }
