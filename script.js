@@ -2317,6 +2317,168 @@ async function shareMarkerById(markerId) {
     if (!ok) await copyToClipboard(minimalUrl);
 }
 
+// 新增：僅網址分享（含圖片與路線），不觸發檔案分享回退
+async function shareMarkerByIdUrl(markerId) {
+    const marker = markers.find(m => m.id === markerId);
+    if (!marker) { showNotification('❌ 找不到要分享的標註點', 'error'); return; }
+    const MAX_URL_LENGTH_FOR_SHARE = 8000;
+    const group = groups ? groups.find(g => g.id === marker.groupId) : null;
+    const subgroup = group && group.subgroups ? group.subgroups.find(sg => sg.id === marker.subgroupId) : null;
+    const currentZoom = (typeof map !== 'undefined' && map && typeof map.getZoom === 'function') ? map.getZoom() : null;
+    let selectedRouteIndex = null;
+    let selectedRouteSummary = null;
+    try {
+        if (typeof window.getSelectedRouteIndex === 'function') {
+            const idx = window.getSelectedRouteIndex(markerId);
+            if (typeof idx === 'number' && !Number.isNaN(idx)) selectedRouteIndex = idx;
+        } else if (window.routeSelectIndex && typeof window.routeSelectIndex[marker.id] === 'number') {
+            selectedRouteIndex = window.routeSelectIndex[marker.id];
+        }
+        if (selectedRouteIndex !== null && marker.routeRecords && marker.routeRecords[selectedRouteIndex]) {
+            selectedRouteSummary = buildRouteSummaryForShare(marker.routeRecords[selectedRouteIndex]);
+        }
+    } catch {}
+    let images = null;
+    try {
+        if (marker.imageData) {
+            if (Array.isArray(marker.imageData)) {
+                images = await Promise.all(
+                    marker.imageData.map(async (img) => {
+                        if (typeof img === 'string' && img.startsWith('data:image/')) {
+                            try { return await compressImage(img, 15); } catch (e) { return img; }
+                        }
+                        return img;
+                    })
+                );
+            } else if (typeof marker.imageData === 'string' && marker.imageData.startsWith('data:image/')) {
+                try { images = [await compressImage(marker.imageData, 15)]; } catch (e) { images = [marker.imageData]; }
+            } else {
+                images = Array.isArray(marker.imageData) ? marker.imageData : [marker.imageData];
+            }
+        }
+    } catch (e) { images = null; }
+    let routeSummaries = [];
+    try {
+        if (Array.isArray(marker.routeRecords)) {
+            routeSummaries = marker.routeRecords.map(r => buildRouteSummaryForShare(r)).filter(Boolean);
+        }
+    } catch (e) { routeSummaries = []; }
+    const basePayload = {
+        type: 'marker',
+        name: marker.name || '',
+        description: marker.description || '',
+        lat: marker.lat,
+        lng: marker.lng,
+        color: marker.color || 'red',
+        icon: marker.icon || '📍',
+        zoom: currentZoom,
+        filter: subgroup ? { type: 'subgroup', groupName: group?.name || '', subgroupName: subgroup?.name || '' } : (group ? { type: 'group', groupName: group.name || '' } : null),
+        trackingEnabled: !!isTracking,
+        route: (selectedRouteIndex !== null ? { index: selectedRouteIndex, action: 'use' } : null)
+    };
+    // 嘗試：完整圖片與路線
+    let payload = { ...basePayload, images: images || [], routes: routeSummaries };
+    let url = buildShareLink(payload);
+    if (url.length <= MAX_URL_LENGTH_FOR_SHARE) {
+        const ok = await tryWebShare('分享標註（含圖片與路線）', `${marker.icon} ${marker.name}`, url);
+        if (!ok) await copyToClipboard(url);
+        showNotification('🔗 已生成共享連結（含圖片與路線）', 'success');
+        return;
+    }
+    // 精簡：首圖 + 路線降點
+    try {
+        const limitedImages = Array.isArray(images) && images.length > 0 ? [images[0]] : [];
+        const slimImages = limitedImages.length ? [await compressImage(limitedImages[0], 8)] : [];
+        const slimRoutes = (Array.isArray(routeSummaries) ? routeSummaries.map(r => ({
+            name: r.name,
+            distance: r.distance,
+            duration: r.duration,
+            color: r.color,
+            createdAt: r.createdAt,
+            startMarkerName: r.startMarkerName,
+            targetMarkerName: r.targetMarkerName,
+            points: simplifyRouteCoordinates(r.points, 150)
+        })) : []);
+        payload = { ...basePayload, images: slimImages, routes: slimRoutes };
+        url = buildShareLink(payload);
+        if (url.length <= MAX_URL_LENGTH_FOR_SHARE) {
+            const ok = await tryWebShare('分享標註（含首圖與路線）', `${marker.icon} ${marker.name}`, url);
+            if (!ok) await copyToClipboard(url);
+            showNotification('🔗 已生成共享連結（含首圖與路線）', 'success');
+            return;
+        }
+    } catch {}
+    // 僅路線（降至 80 點）
+    try {
+        const ultraRoutes = (Array.isArray(routeSummaries) ? routeSummaries.map(r => ({
+            name: r.name,
+            distance: r.distance,
+            duration: r.duration,
+            color: r.color,
+            createdAt: r.createdAt,
+            startMarkerName: r.startMarkerName,
+            targetMarkerName: r.targetMarkerName,
+            points: simplifyRouteCoordinates(r.points, 80)
+        })) : []);
+        payload = { ...basePayload, images: [], routes: ultraRoutes };
+        url = buildShareLink(payload);
+        if (url.length <= MAX_URL_LENGTH_FOR_SHARE) {
+            const ok = await tryWebShare('分享標註（含路線，不含圖片）', `${marker.icon} ${marker.name}`, url);
+            if (!ok) await copyToClipboard(url);
+            showNotification('🔗 已生成共享連結（含路線，圖片過長已省略）', 'info');
+            return;
+        }
+    } catch {}
+    // 最小：僅基本資訊與目前選擇路線摘要（若有）
+    const minimalPayload = { ...basePayload, routes: (selectedRouteSummary ? [selectedRouteSummary] : []) };
+    const minimalUrl = buildShareLink(minimalPayload);
+    const ok2 = await tryWebShare('分享標註（精簡連結）', `${marker.icon} ${marker.name}`, minimalUrl);
+    if (!ok2) await copyToClipboard(minimalUrl);
+    showNotification('ℹ️ 連結過長，已以精簡模式分享（可能不含圖片）', 'warning');
+}
+
+// 新增：僅完整檔案分享（含所有圖片與路線），不產生網址
+async function shareMarkerByIdFile(markerId) {
+    const marker = markers.find(m => m.id === markerId);
+    if (!marker) { showNotification('❌ 找不到要分享的標註點', 'error'); return; }
+    try {
+        const fullData = await buildFullMarkerShareData(marker);
+        const dataStr = JSON.stringify(fullData, null, 2);
+        const blob = new Blob([dataStr], { type: 'application/json' });
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        const timeStr = now.toTimeString().split(' ')[0].replace(/:/g, '-');
+        const safeName = (marker.name || '標註').replace(/[\\/:*?"<>|]/g, '_');
+        const fileName = `分享標註_${safeName}_${year}-${month}-${day}_${timeStr}.json`;
+        const file = new File([blob], fileName, { type: 'application/json' });
+        const canShareFiles = typeof navigator !== 'undefined' && navigator.canShare && navigator.canShare({ files: [file] });
+        if (canShareFiles && navigator.share) {
+            try {
+                await navigator.share({ title: '分享標註（完整資料檔案）', text: `${marker.icon} ${marker.name}`, files: [file] });
+                showNotification('📤 已透過系統分享完整檔案（含圖片與路線）', 'success');
+                return;
+            } catch (e) {
+                console.warn('系統檔案分享失敗，改用下載：', e);
+            }
+        }
+        // 下載備援
+        const urlObj = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = urlObj;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(urlObj);
+        showNotification('📥 已下載分享檔案（含圖片與路線）', 'info');
+    } catch (e) {
+        console.error('建立完整分享資料失敗：', e);
+        showNotification('❌ 建立分享檔案失敗', 'error');
+    }
+}
+
 function shareCurrentLocation() {
     let latlng = null;
     if (currentPosition && currentPosition.lat && currentPosition.lng) {
@@ -2598,6 +2760,8 @@ function handleSharedLinkOnInit() {
 
 // 將分享函式暴露到全域，供內嵌 onclick 使用
 window.shareMarkerById = shareMarkerById;
+window.shareMarkerByIdUrl = shareMarkerByIdUrl;
+window.shareMarkerByIdFile = shareMarkerByIdFile;
 window.shareCurrentLocation = shareCurrentLocation;
 
 // 圖片處理相關函數
@@ -5053,7 +5217,8 @@ function updateMarkerPopup(marker) {
                 <button onclick="editMarker('${marker.id}')" style="padding: 4px 8px; font-size: 12px;">編輯</button>
                 ${trackingButton}
                 <button onclick="showOnlyThisMarker('${marker.id}')" style="padding: 4px 8px; font-size: 12px;">只顯示</button>
-                <button onclick="shareMarkerById('${marker.id}')" style="padding: 4px 8px; font-size: 12px;">分享</button>
+                <button onclick="shareMarkerByIdUrl('${marker.id}')" style="padding: 4px 8px; font-size: 12px;">網址分享（含圖片與路線）</button>
+                <button onclick="shareMarkerByIdFile('${marker.id}')" style="padding: 4px 8px; font-size: 12px;">完整檔案分享</button>
             </div>
             ${routeManagementSection}
         </div>
