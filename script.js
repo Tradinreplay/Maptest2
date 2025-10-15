@@ -1972,6 +1972,47 @@ function buildShareLink(payload) {
     return `${baseUrl}?shared=${encoded}`;
 }
 
+// 壓縮路線座標：均勻取樣至最多 maxPoints，並只保留 lat/lng
+function simplifyRouteCoordinates(coords, maxPoints = 200) {
+    try {
+        if (!Array.isArray(coords) || coords.length === 0) return [];
+        const total = coords.length;
+        if (total <= maxPoints) {
+            return coords.map(c => ({ lat: c.lat, lng: c.lng }));
+        }
+        const step = Math.max(1, Math.floor(total / maxPoints));
+        const simplified = [];
+        for (let i = 0; i < total; i += step) {
+            const c = coords[i];
+            simplified.push({ lat: c.lat, lng: c.lng });
+        }
+        // 確保最後一點存在
+        const last = coords[coords.length - 1];
+        if (simplified.length === 0 || simplified[simplified.length - 1].lat !== last.lat || simplified[simplified.length - 1].lng !== last.lng) {
+            simplified.push({ lat: last.lat, lng: last.lng });
+        }
+        return simplified;
+    } catch (e) {
+        console.warn('simplifyRouteCoordinates 失敗：', e);
+        return [];
+    }
+}
+
+// 將現有路線記錄轉為分享摘要（包含距離、時長、起迄名稱、顏色與簡化座標）
+function buildRouteSummaryForShare(route) {
+    if (!route) return null;
+    return {
+        name: route.name || '',
+        distance: route.distance || 0,
+        duration: route.duration || 0,
+        color: route.color || undefined,
+        createdAt: route.createdAt || undefined,
+        startMarkerName: route.startMarkerName || undefined,
+        targetMarkerName: route.targetMarkerName || undefined,
+        points: Array.isArray(route.coordinates) ? simplifyRouteCoordinates(route.coordinates) : []
+    };
+}
+
 async function copyToClipboard(text) {
     try {
         await navigator.clipboard.writeText(text);
@@ -2013,12 +2054,16 @@ function shareMarkerById(markerId) {
     const currentZoom = (typeof map !== 'undefined' && map && typeof map.getZoom === 'function') ? map.getZoom() : null;
     // 擷取目前此標記的路線選擇（若存在則一併分享意圖）
     let selectedRouteIndex = null;
+    let selectedRouteSummary = null;
     try {
         if (typeof window.getSelectedRouteIndex === 'function') {
             const idx = window.getSelectedRouteIndex(markerId);
             if (typeof idx === 'number' && !Number.isNaN(idx)) selectedRouteIndex = idx;
         } else if (window.routeSelectIndex && typeof window.routeSelectIndex[marker.id] === 'number') {
             selectedRouteIndex = window.routeSelectIndex[marker.id];
+        }
+        if (selectedRouteIndex !== null && marker.routeRecords && marker.routeRecords[selectedRouteIndex]) {
+            selectedRouteSummary = buildRouteSummaryForShare(marker.routeRecords[selectedRouteIndex]);
         }
     } catch (e) {
         // 忽略路線索引取得失敗
@@ -2038,6 +2083,9 @@ function shareMarkerById(markerId) {
         route: (selectedRouteIndex !== null ? { index: selectedRouteIndex, action: 'use' } : null)
         // 圖片內容與完整路線資料不直接包含，避免連結過長
     };
+    if (selectedRouteSummary) {
+        payload.routes = [selectedRouteSummary];
+    }
     const url = buildShareLink(payload);
     tryWebShare('分享標註點', `${marker.icon} ${marker.name}`, url)
         .then((shared) => { if (!shared) copyToClipboard(url); });
@@ -2111,6 +2159,140 @@ function prefillMarkerFormFromPayload(payload) {
     showNotification('📍 已載入共享標註資料，請確認後保存', 'info');
 }
 
+// 引導：顯示「一鍵保存共享標註與路線」提示
+function showSaveSharedMarkerPrompt(payload) {
+    try {
+        // 若已有提示，先移除
+        const existing = document.getElementById('saveSharedMarkerPrompt');
+        if (existing) existing.remove();
+        const prompt = document.createElement('div');
+        prompt.id = 'saveSharedMarkerPrompt';
+        prompt.style.cssText = `
+            position: fixed;
+            left: 50%;
+            bottom: 24px;
+            transform: translateX(-50%);
+            background: rgba(32, 32, 32, 0.92);
+            color: #fff;
+            padding: 10px 14px;
+            border-radius: 10px;
+            font-size: 14px;
+            z-index: 20000;
+            box-shadow: 0 6px 18px rgba(0,0,0,0.2);
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        `;
+        const label = document.createElement('span');
+        label.textContent = '已載入共享標註與路線';
+        const saveBtn = document.createElement('button');
+        saveBtn.textContent = '一鍵保存';
+        saveBtn.style.cssText = 'padding: 6px 10px; font-size: 13px; background:#4CAF50; color:#fff; border:none; border-radius:6px;';
+        const cancelBtn = document.createElement('button');
+        cancelBtn.textContent = '取消';
+        cancelBtn.style.cssText = 'padding: 6px 10px; font-size: 13px; background:#9E9E9E; color:#fff; border:none; border-radius:6px;';
+        saveBtn.addEventListener('click', () => {
+            try { saveSharedMarkerAndRoutes(payload); } catch (e) { console.error(e); }
+            try { prompt.remove(); } catch (e) {}
+        });
+        cancelBtn.addEventListener('click', () => {
+            try { prompt.remove(); } catch (e) {}
+        });
+        prompt.appendChild(label);
+        prompt.appendChild(saveBtn);
+        prompt.appendChild(cancelBtn);
+        document.body.appendChild(prompt);
+    } catch (e) {
+        console.warn('顯示保存提示失敗：', e);
+    }
+}
+
+// 程式化：將共享標註與其路線保存為正式資料
+function saveSharedMarkerAndRoutes(payload) {
+    try {
+        // 1) 解析群組/子群組（以名稱）
+        let group = null;
+        let subgroup = null;
+        if (payload.filter && payload.filter.type === 'subgroup') {
+            group = Array.isArray(groups) ? groups.find(g => g.name === payload.filter.groupName) : null;
+            if (!group) {
+                group = new Group('group_' + Date.now().toString(36), payload.filter.groupName || '共享群組');
+                groups.push(group);
+            }
+            subgroup = group.subgroups.find(sg => sg.name === payload.filter.subgroupName) || null;
+            if (!subgroup) {
+                subgroup = new Subgroup('subgroup_' + Date.now().toString(36), payload.filter.subgroupName || '共享子群組', group.id);
+                group.addSubgroup(subgroup);
+            }
+        } else if (payload.filter && payload.filter.type === 'group') {
+            group = Array.isArray(groups) ? groups.find(g => g.name === payload.filter.groupName) : null;
+            if (!group) {
+                group = new Group('group_' + Date.now().toString(36), payload.filter.groupName || '共享群組');
+                groups.push(group);
+            }
+        } else {
+            // 若無指定則使用現有選擇或默認群組
+            if (currentGroup) {
+                group = currentGroup;
+            } else {
+                group = groups.find(g => g.name === '共享群組') || null;
+                if (!group) {
+                    group = new Group('group_' + Date.now().toString(36), '共享群組');
+                    groups.push(group);
+                }
+            }
+        }
+
+        // 2) 建立標註點
+        const marker = new Marker(
+            Date.now().toString(),
+            payload.name || '共享標註',
+            payload.description || '',
+            payload.lat,
+            payload.lng,
+            group.id,
+            subgroup ? subgroup.id : null,
+            payload.color || 'red',
+            payload.icon || '📍',
+            null
+        );
+        markers.push(marker);
+        group.addMarker(marker);
+        if (subgroup) subgroup.addMarker(marker);
+        addMarkerToMap(marker);
+
+        // 3) 匯入路線（僅支援 payload.routes 的 points + metadata）
+        if (Array.isArray(payload.routes)) {
+            payload.routes.forEach(r => {
+                const coordinates = Array.isArray(r.points) ? r.points.map(p => ({ lat: p.lat, lng: p.lng, timestamp: Date.now() })) : [];
+                const added = marker.addRoute({
+                    name: r.name || '共享路線',
+                    coordinates,
+                    distance: r.distance || 0,
+                    duration: r.duration || 0
+                });
+                if (r.color) added.color = r.color;
+                if (r.targetMarkerName) added.targetMarkerName = r.targetMarkerName;
+            });
+        }
+
+        // 4) 保存並更新 UI
+        saveMarkersToStorage();
+        updateMarkersList();
+        updateGroupsList();
+        try { updateMarkerPopup(marker); } catch (e) {}
+        try { marker.leafletMarker && marker.leafletMarker.openPopup(); } catch (e) {}
+        showNotification(`✅ 已保存共享標註與路線（${Array.isArray(payload.routes) ? payload.routes.length : 0} 條路線）`, 'success');
+        // 視角與縮放
+        if (payload.zoom && typeof map !== 'undefined' && map && typeof map.setView === 'function') {
+            try { map.setView([payload.lat, payload.lng], payload.zoom, { animate: true }); } catch (e) {}
+        }
+    } catch (error) {
+        console.error('保存共享標註與路線失敗：', error);
+        showNotification('❌ 保存共享標註與路線失敗', 'error');
+    }
+}
+
 function handleSharedLinkOnInit() {
     try {
         const params = new URLSearchParams(window.location.search);
@@ -2120,6 +2302,12 @@ function handleSharedLinkOnInit() {
             const payload = JSON.parse(jsonStr);
             if (payload && payload.type === 'marker') {
                 prefillMarkerFormFromPayload(payload);
+                // 若有路線資料，顯示一鍵保存提示以正式保存標註與路線
+                try {
+                    if (Array.isArray(payload.routes) && payload.routes.length > 0) {
+                        showSaveSharedMarkerPrompt(payload);
+                    }
+                } catch (e) {}
                 // 若要求開啟追蹤，嘗試啟用追蹤（無目標亦可啟動定位）
                 try { if (payload.trackingEnabled && typeof startTracking === 'function') startTracking(); } catch (e) {}
                 // 若包含路線提示，且本地已存在相同名稱/群組的標記，嘗試套用
