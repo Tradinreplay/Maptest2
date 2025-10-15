@@ -1966,10 +1966,52 @@ function base64DecodeUnicode(str) {
     }
 }
 
+// 進一步縮短連結：base64url 與 gzip（pako）
+function bytesToBase64Url(bytes) {
+    try {
+        let binary = '';
+        for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+        const b64 = btoa(binary);
+        return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+    } catch (e) {
+        console.error('bytesToBase64Url failed:', e);
+        return '';
+    }
+}
+
+function base64UrlToBytes(str) {
+    try {
+        let b64 = str.replace(/-/g, '+').replace(/_/g, '/');
+        const pad = b64.length % 4;
+        if (pad) b64 += '='.repeat(4 - pad);
+        const binary = atob(b64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        return bytes;
+    } catch (e) {
+        console.error('base64UrlToBytes failed:', e);
+        return new Uint8Array();
+    }
+}
+
 function buildShareLink(payload) {
     const encoded = base64EncodeUnicode(JSON.stringify(payload));
     const baseUrl = window.location.origin + window.location.pathname;
     return `${baseUrl}?shared=${encoded}`;
+}
+
+function buildCompressedShareLink(payload) {
+    try {
+        const json = JSON.stringify(payload);
+        const deflated = (typeof pako !== 'undefined' && pako && typeof pako.deflate === 'function') ? pako.deflate(json) : null;
+        if (!deflated) return buildShareLink(payload);
+        const b64url = bytesToBase64Url(deflated);
+        const baseUrl = window.location.origin + window.location.pathname;
+        return `${baseUrl}?shared_gz=${b64url}`;
+    } catch (e) {
+        console.warn('buildCompressedShareLink 失敗，回退普通連結：', e);
+        return buildShareLink(payload);
+    }
 }
 
 // 壓縮路線座標：均勻取樣至最多 maxPoints，並只保留 lat/lng
@@ -2345,13 +2387,13 @@ async function shareMarkerByIdUrl(markerId) {
                 images = await Promise.all(
                     marker.imageData.map(async (img) => {
                         if (typeof img === 'string' && img.startsWith('data:image/')) {
-                            try { return await compressImage(img, 15); } catch (e) { return img; }
+                            try { return await compressImage(img, 6); } catch (e) { return img; }
                         }
                         return img;
                     })
                 );
             } else if (typeof marker.imageData === 'string' && marker.imageData.startsWith('data:image/')) {
-                try { images = [await compressImage(marker.imageData, 15)]; } catch (e) { images = [marker.imageData]; }
+                try { images = [await compressImage(marker.imageData, 6)]; } catch (e) { images = [marker.imageData]; }
             } else {
                 images = Array.isArray(marker.imageData) ? marker.imageData : [marker.imageData];
             }
@@ -2378,7 +2420,7 @@ async function shareMarkerByIdUrl(markerId) {
     };
     // 嘗試：完整圖片與路線
     let payload = { ...basePayload, images: images || [], routes: routeSummaries };
-    let url = buildShareLink(payload);
+    let url = buildCompressedShareLink(payload);
     if (url.length <= MAX_URL_LENGTH_FOR_SHARE) {
         const ok = await tryWebShare('分享標註（含圖片與路線）', `${marker.icon} ${marker.name}`, url);
         if (!ok) await copyToClipboard(url);
@@ -2388,7 +2430,7 @@ async function shareMarkerByIdUrl(markerId) {
     // 精簡：首圖 + 路線降點
     try {
         const limitedImages = Array.isArray(images) && images.length > 0 ? [images[0]] : [];
-        const slimImages = limitedImages.length ? [await compressImage(limitedImages[0], 8)] : [];
+        const slimImages = limitedImages.length ? [await compressImage(limitedImages[0], 4)] : [];
         const slimRoutes = (Array.isArray(routeSummaries) ? routeSummaries.map(r => ({
             name: r.name,
             distance: r.distance,
@@ -2400,7 +2442,7 @@ async function shareMarkerByIdUrl(markerId) {
             points: simplifyRouteCoordinates(r.points, 150)
         })) : []);
         payload = { ...basePayload, images: slimImages, routes: slimRoutes };
-        url = buildShareLink(payload);
+        url = buildCompressedShareLink(payload);
         if (url.length <= MAX_URL_LENGTH_FOR_SHARE) {
             const ok = await tryWebShare('分享標註（含首圖與路線）', `${marker.icon} ${marker.name}`, url);
             if (!ok) await copyToClipboard(url);
@@ -2421,7 +2463,7 @@ async function shareMarkerByIdUrl(markerId) {
             points: simplifyRouteCoordinates(r.points, 80)
         })) : []);
         payload = { ...basePayload, images: [], routes: ultraRoutes };
-        url = buildShareLink(payload);
+        url = buildCompressedShareLink(payload);
         if (url.length <= MAX_URL_LENGTH_FOR_SHARE) {
             const ok = await tryWebShare('分享標註（含路線，不含圖片）', `${marker.icon} ${marker.name}`, url);
             if (!ok) await copyToClipboard(url);
@@ -2431,7 +2473,7 @@ async function shareMarkerByIdUrl(markerId) {
     } catch {}
     // 最小：僅基本資訊與目前選擇路線摘要（若有）
     const minimalPayload = { ...basePayload, routes: (selectedRouteSummary ? [selectedRouteSummary] : []) };
-    const minimalUrl = buildShareLink(minimalPayload);
+    const minimalUrl = buildCompressedShareLink(minimalPayload);
     const ok2 = await tryWebShare('分享標註（精簡連結）', `${marker.icon} ${marker.name}`, minimalUrl);
     if (!ok2) await copyToClipboard(minimalUrl);
     showNotification('ℹ️ 連結過長，已以精簡模式分享（可能不含圖片）', 'warning');
@@ -2693,10 +2735,23 @@ function saveSharedMarkerAndRoutes(payload) {
 function handleSharedLinkOnInit() {
     try {
         const params = new URLSearchParams(window.location.search);
-        if (params.has('shared')) {
-            const raw = params.get('shared');
-            const jsonStr = base64DecodeUnicode(raw);
-            const payload = JSON.parse(jsonStr);
+        if (params.has('shared_gz') || params.has('shared')) {
+            let payload = null;
+            try {
+                if (params.has('shared_gz')) {
+                    const rawGz = params.get('shared_gz');
+                    const bytes = base64UrlToBytes(rawGz);
+                    const jsonStrGz = (typeof pako !== 'undefined' && pako && typeof pako.inflate === 'function') ? pako.inflate(bytes, { to: 'string' }) : '';
+                    payload = JSON.parse(jsonStrGz);
+                } else {
+                    const raw = params.get('shared');
+                    const jsonStr = base64DecodeUnicode(raw);
+                    payload = JSON.parse(jsonStr);
+                }
+            } catch (e) {
+                console.error('解析共享連結內容失敗：', e);
+                payload = null;
+            }
             if (payload && payload.type === 'marker') {
                 prefillMarkerFormFromPayload(payload);
                 // 若有路線資料，顯示一鍵保存提示以正式保存標註與路線
