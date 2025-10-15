@@ -2006,6 +2006,23 @@ function shareMarkerById(markerId) {
         showNotification('❌ 找不到要分享的標註點', 'error');
         return;
     }
+    // 取得群組/子群組名稱（以名稱為準，避免跨裝置 ID 不一致）
+    const group = groups ? groups.find(g => g.id === marker.groupId) : null;
+    const subgroup = group && group.subgroups ? group.subgroups.find(sg => sg.id === marker.subgroupId) : null;
+    // 擷取目前地圖縮放層級
+    const currentZoom = (typeof map !== 'undefined' && map && typeof map.getZoom === 'function') ? map.getZoom() : null;
+    // 擷取目前此標記的路線選擇（若存在則一併分享意圖）
+    let selectedRouteIndex = null;
+    try {
+        if (typeof window.getSelectedRouteIndex === 'function') {
+            const idx = window.getSelectedRouteIndex(markerId);
+            if (typeof idx === 'number' && !Number.isNaN(idx)) selectedRouteIndex = idx;
+        } else if (window.routeSelectIndex && typeof window.routeSelectIndex[marker.id] === 'number') {
+            selectedRouteIndex = window.routeSelectIndex[marker.id];
+        }
+    } catch (e) {
+        // 忽略路線索引取得失敗
+    }
     const payload = {
         type: 'marker',
         name: marker.name || '',
@@ -2013,8 +2030,13 @@ function shareMarkerById(markerId) {
         lat: marker.lat,
         lng: marker.lng,
         color: marker.color || 'red',
-        icon: marker.icon || '📍'
-        // 圖片與路線不隨連結分享，避免過長
+        icon: marker.icon || '📍',
+        // 額外資訊：縮放層級、子群組顯示邏輯（以名稱攜帶）、追蹤狀態、路線提示
+        zoom: currentZoom,
+        filter: subgroup ? { type: 'subgroup', groupName: group?.name || '', subgroupName: subgroup?.name || '' } : (group ? { type: 'group', groupName: group.name || '' } : null),
+        trackingEnabled: !!isTracking,
+        route: (selectedRouteIndex !== null ? { index: selectedRouteIndex, action: 'use' } : null)
+        // 圖片內容與完整路線資料不直接包含，避免連結過長
     };
     const url = buildShareLink(payload);
     tryWebShare('分享標註點', `${marker.icon} ${marker.name}`, url)
@@ -2037,7 +2059,10 @@ function shareCurrentLocation() {
         type: 'location',
         lat: latlng.lat,
         lng: latlng.lng,
-        ts: Date.now()
+        ts: Date.now(),
+        // 額外資訊：縮放層級與目前追蹤狀態
+        zoom: (typeof map !== 'undefined' && map && typeof map.getZoom === 'function') ? map.getZoom() : null,
+        trackingEnabled: !!isTracking
     };
     const url = buildShareLink(payload);
     tryWebShare('分享我的位置', `座標：${latlng.lat.toFixed(6)}, ${latlng.lng.toFixed(6)}`, url)
@@ -2066,6 +2091,23 @@ function prefillMarkerFormFromPayload(payload) {
     if (colorRadio) colorRadio.checked = true;
     const iconRadio = document.querySelector(`input[name="markerIcon"][value="${payload.icon || '📍'}"]`);
     if (iconRadio) iconRadio.checked = true;
+    // 若有指定縮放層級，則一併套用視角
+    if (payload.zoom && typeof map !== 'undefined' && map && typeof map.setView === 'function') {
+        try { map.setView([payload.lat, payload.lng], payload.zoom, { animate: true }); } catch (e) {}
+    }
+    // 若有指定子群組/群組顯示邏輯（以名稱），嘗試切換顯示
+    try {
+        if (payload.filter && payload.filter.type === 'subgroup' && payload.filter.groupName && payload.filter.subgroupName) {
+            const grp = (Array.isArray(groups) ? groups.find(g => g.name === payload.filter.groupName) : null);
+            const sub = (grp && Array.isArray(grp.subgroups)) ? grp.subgroups.find(sg => sg.name === payload.filter.subgroupName) : null;
+            if (grp && sub && typeof selectGroup === 'function') selectGroup(grp.id, sub.id);
+        } else if (payload.filter && payload.filter.type === 'group' && payload.filter.groupName) {
+            const grp = (Array.isArray(groups) ? groups.find(g => g.name === payload.filter.groupName) : null);
+            if (grp && typeof selectGroup === 'function') selectGroup(grp.id);
+        }
+    } catch (e) {
+        // 忽略顯示邏輯套用失敗
+    }
     showNotification('📍 已載入共享標註資料，請確認後保存', 'info');
 }
 
@@ -2078,8 +2120,45 @@ function handleSharedLinkOnInit() {
             const payload = JSON.parse(jsonStr);
             if (payload && payload.type === 'marker') {
                 prefillMarkerFormFromPayload(payload);
+                // 若要求開啟追蹤，嘗試啟用追蹤（無目標亦可啟動定位）
+                try { if (payload.trackingEnabled && typeof startTracking === 'function') startTracking(); } catch (e) {}
+                // 若包含路線提示，且本地已存在相同名稱/群組的標記，嘗試套用
+                try {
+                    if (payload.route && typeof payload.route.index === 'number') {
+                        let candidate = null;
+                        // 依群組名稱 + 標記名稱找到可能的目標標記
+                        let groupId = null;
+                        if (payload.filter && payload.filter.groupName && Array.isArray(groups)) {
+                            const grp = groups.find(g => g.name === payload.filter.groupName);
+                            if (grp) groupId = grp.id;
+                        }
+                        const sameName = Array.isArray(markers) ? markers.filter(m => m.name === payload.name) : [];
+                        if (sameName.length === 1) {
+                            candidate = sameName[0];
+                        } else if (sameName.length > 1) {
+                            const narrowed = groupId ? sameName.filter(m => m.groupId === groupId) : sameName;
+                            if (narrowed.length === 1) candidate = narrowed[0];
+                        }
+                        if (candidate && typeof displayRoute === 'function') {
+                            const action = payload.route.action || 'use';
+                            if (action === 'use' && typeof useRoute === 'function') {
+                                useRoute(candidate.id, payload.route.index);
+                            } else if (action === 'display') {
+                                displayRoute(candidate.id, payload.route.index);
+                            } else if (action === 'hide' && typeof hideRoute === 'function') {
+                                hideRoute(candidate.id, payload.route.index);
+                            }
+                        }
+                    }
+                } catch (e) {}
             } else if (payload && payload.type === 'location') {
                 addTemporarySharedLocationMarker(payload.lat, payload.lng);
+                // 若指定縮放層級則套用
+                if (payload.zoom && typeof map !== 'undefined' && map && typeof map.setView === 'function') {
+                    try { map.setView([payload.lat, payload.lng], payload.zoom, { animate: true }); } catch (e) {}
+                }
+                // 若要求開啟追蹤，嘗試啟用追蹤
+                try { if (payload.trackingEnabled && typeof startTracking === 'function') startTracking(); } catch (e) {}
                 showNotification('🔗 已載入共享位置', 'success');
             }
         } else if (params.has('lat') && params.has('lng')) {
@@ -3091,6 +3170,9 @@ function addMobileTouchSupport(element, functionName) {
                 window.showHelpModal();
             } else if (functionName === 'toggleMapRotation' && typeof window.toggleMapRotation === 'function') {
                 window.toggleMapRotation();
+            } else if (functionName === 'shareCurrentLocation' && typeof window.shareCurrentLocation === 'function') {
+                // iOS/Safari 需在使用者手勢事件中直接呼叫分享
+                window.shareCurrentLocation();
             }
         }
         
