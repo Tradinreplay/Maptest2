@@ -2055,6 +2055,21 @@ function buildRouteSummaryForShare(route) {
     };
 }
 
+// 變體：可指定最大座標點數，避免網址過長
+function buildRouteSummaryForShareWithLimit(route, maxPoints) {
+    if (!route) return null;
+    return {
+        name: route.name || '',
+        distance: route.distance || 0,
+        duration: route.duration || 0,
+        color: route.color || undefined,
+        createdAt: route.createdAt || undefined,
+        startMarkerName: route.startMarkerName || undefined,
+        targetMarkerName: route.targetMarkerName || undefined,
+        points: Array.isArray(route.coordinates) ? simplifyRouteCoordinates(route.coordinates, maxPoints) : []
+    };
+}
+
 async function copyToClipboard(text) {
     try {
         await navigator.clipboard.writeText(text);
@@ -2377,7 +2392,7 @@ async function shareMarkerByIdUrl(markerId) {
             selectedRouteIndex = window.routeSelectIndex[marker.id];
         }
         if (selectedRouteIndex !== null && marker.routeRecords && marker.routeRecords[selectedRouteIndex]) {
-            selectedRouteSummary = buildRouteSummaryForShare(marker.routeRecords[selectedRouteIndex]);
+            selectedRouteSummary = buildRouteSummaryForShareWithLimit(marker.routeRecords[selectedRouteIndex], 120);
         }
     } catch {}
     let images = null;
@@ -2387,13 +2402,13 @@ async function shareMarkerByIdUrl(markerId) {
                 images = await Promise.all(
                     marker.imageData.map(async (img) => {
                         if (typeof img === 'string' && img.startsWith('data:image/')) {
-                            try { return await compressImage(img, 6); } catch (e) { return img; }
+                            try { return await compressImageForShare(img, 5, 480); } catch (e) { return img; }
                         }
                         return img;
                     })
                 );
             } else if (typeof marker.imageData === 'string' && marker.imageData.startsWith('data:image/')) {
-                try { images = [await compressImage(marker.imageData, 6)]; } catch (e) { images = [marker.imageData]; }
+                try { images = [await compressImageForShare(marker.imageData, 5, 480)]; } catch (e) { images = [marker.imageData]; }
             } else {
                 images = Array.isArray(marker.imageData) ? marker.imageData : [marker.imageData];
             }
@@ -2402,13 +2417,13 @@ async function shareMarkerByIdUrl(markerId) {
     let routeSummaries = [];
     try {
         if (Array.isArray(marker.routeRecords)) {
-            routeSummaries = marker.routeRecords.map(r => buildRouteSummaryForShare(r)).filter(Boolean);
+            routeSummaries = marker.routeRecords.map(r => buildRouteSummaryForShareWithLimit(r, 120)).filter(Boolean);
         }
     } catch (e) { routeSummaries = []; }
     const basePayload = {
         type: 'marker',
         name: marker.name || '',
-        description: marker.description || '',
+        description: truncateString(marker.description || '', 250),
         lat: marker.lat,
         lng: marker.lng,
         color: marker.color || 'red',
@@ -2430,7 +2445,7 @@ async function shareMarkerByIdUrl(markerId) {
     // 精簡：首圖 + 路線降點
     try {
         const limitedImages = Array.isArray(images) && images.length > 0 ? [images[0]] : [];
-        const slimImages = limitedImages.length ? [await compressImage(limitedImages[0], 4)] : [];
+        const slimImages = limitedImages.length ? [await compressImageForShare(limitedImages[0], 4, 420)] : [];
         const slimRoutes = (Array.isArray(routeSummaries) ? routeSummaries.map(r => ({
             name: r.name,
             distance: r.distance,
@@ -2439,7 +2454,7 @@ async function shareMarkerByIdUrl(markerId) {
             createdAt: r.createdAt,
             startMarkerName: r.startMarkerName,
             targetMarkerName: r.targetMarkerName,
-            points: simplifyRouteCoordinates(r.points, 150)
+            points: simplifyRouteCoordinates(r.points, 120)
         })) : []);
         payload = { ...basePayload, images: slimImages, routes: slimRoutes };
         url = buildCompressedShareLink(payload);
@@ -2877,6 +2892,80 @@ function compressImage(file, maxSizeKB = 25) {
             img.src = file;
         }
     });
+}
+
+// 專用於網址分享的更激進壓縮：優先 WebP，必要時縮小尺寸
+async function compressImageForShare(fileOrDataUrl, targetKB = 5, maxDimension = 480) {
+    return new Promise((resolve) => {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        const img = new Image();
+        img.onload = function() {
+            let width = img.width;
+            let height = img.height;
+            const scaleDown = (w, h, maxDim) => {
+                if (w > h && w > maxDim) {
+                    h = Math.round((h * maxDim) / w);
+                    w = maxDim;
+                } else if (h > maxDim) {
+                    w = Math.round((w * maxDim) / h);
+                    h = maxDim;
+                }
+                return { w, h };
+            };
+            const dim = scaleDown(width, height, maxDimension);
+            width = dim.w; height = dim.h;
+            canvas.width = width;
+            canvas.height = height;
+            ctx.drawImage(img, 0, 0, width, height);
+            let quality = 0.6;
+            let attempt = 0;
+            const tryCompress = () => {
+                const preferWebp = true;
+                let dataUrl = '';
+                if (preferWebp) {
+                    try { dataUrl = canvas.toDataURL('image/webp', quality); } catch {}
+                }
+                if (!dataUrl || typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/webp')) {
+                    dataUrl = canvas.toDataURL('image/jpeg', quality);
+                }
+                const sizeKB = Math.round((dataUrl.length * 3) / 4 / 1024);
+                if (sizeKB > targetKB && (quality > 0.2 || attempt < 4)) {
+                    if (quality > 0.2) quality = Math.max(0.2, quality - 0.1);
+                    else {
+                        // 進一步縮小尺寸
+                        const newDim = scaleDown(width, height, Math.round(maxDimension * 0.8));
+                        if (newDim.w < width || newDim.h < height) {
+                            width = newDim.w; height = newDim.h;
+                            canvas.width = width; canvas.height = height;
+                            ctx.drawImage(img, 0, 0, width, height);
+                            maxDimension = Math.round(maxDimension * 0.8);
+                        }
+                    }
+                    attempt++;
+                    tryCompress();
+                } else {
+                    resolve(dataUrl);
+                }
+            };
+            tryCompress();
+        };
+        if (fileOrDataUrl instanceof File) {
+            const reader = new FileReader();
+            reader.onload = (e) => { img.src = e.target.result; };
+            reader.readAsDataURL(fileOrDataUrl);
+        } else {
+            img.src = fileOrDataUrl;
+        }
+    });
+}
+
+function truncateString(str, maxLen = 250) {
+    try {
+        if (typeof str !== 'string') return '';
+        if (str.length <= maxLen) return str;
+        return str.slice(0, maxLen);
+    } catch { return ''; }
 }
 
 function handleImageUpload(event) {
