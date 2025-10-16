@@ -1503,11 +1503,7 @@ function initEventListeners() {
     document.getElementById('notificationBtn').addEventListener('click', toggleNotifications);
     document.getElementById('centerMapBtn').addEventListener('click', centerMapToCurrentLocation);
 
-    // 分享目前位置按鈕（快速操作）
-    const shareLocationBtn = document.getElementById('shareLocationBtn');
-    if (shareLocationBtn) {
-        shareLocationBtn.addEventListener('click', shareCurrentLocation);
-    }
+    // 分享目前位置按鈕（快速操作）已移除：改以標註層級分享
 
     // 當前位置顯示區域點擊事件
     const currentLocationDiv = document.getElementById('currentLocation');
@@ -2098,6 +2094,29 @@ async function tryWebShare(title, text, url) {
     return false;
 }
 
+// 新增：Telegram 分享（偏好使用 t.me 網址分享，支援長連結與文字）
+function openTelegramShare(title, text, url) {
+    const params = new URLSearchParams();
+    if (url) params.set('url', url);
+    if (text) params.set('text', text);
+    const tgScheme = `tg://share?${params.toString()}`;
+    const webUrl = `https://t.me/share/url?${params.toString()}`;
+    try {
+        // 先嘗試桌面/行動 App 的 tg:// 協議
+        const schemeWin = window.open(tgScheme, '_blank');
+        if (schemeWin) return true;
+    } catch (e) {
+        // 忽略 tg:// 失敗，改用 Web 版
+    }
+    try {
+        const win = window.open(webUrl, '_blank');
+        return !!win;
+    } catch (e) {
+        console.warn('Telegram 分享呼叫失敗:', e);
+        return false;
+    }
+}
+
 // 建立含圖片與路線的單一標註分享資料（與匯入格式相容）
 async function buildFullMarkerShareData(marker) {
     try {
@@ -2437,7 +2456,7 @@ async function shareMarkerByIdUrl(markerId) {
     let payload = { ...basePayload, images: images || [], routes: routeSummaries };
     let url = buildCompressedShareLink(payload);
     if (url.length <= MAX_URL_LENGTH_FOR_SHARE) {
-        const ok = await tryWebShare('分享標註（含圖片與路線）', `${marker.icon} ${marker.name}`, url);
+        const ok = openTelegramShare('分享標註（含圖片與路線）', `${marker.icon} ${marker.name}` , url);
         if (!ok) await copyToClipboard(url);
         showNotification('🔗 已生成共享連結（含圖片與路線）', 'success');
         return;
@@ -2459,7 +2478,7 @@ async function shareMarkerByIdUrl(markerId) {
         payload = { ...basePayload, images: slimImages, routes: slimRoutes };
         url = buildCompressedShareLink(payload);
         if (url.length <= MAX_URL_LENGTH_FOR_SHARE) {
-            const ok = await tryWebShare('分享標註（含首圖與路線）', `${marker.icon} ${marker.name}`, url);
+            const ok = openTelegramShare('分享標註（含首圖與路線）', `${marker.icon} ${marker.name}`, url);
             if (!ok) await copyToClipboard(url);
             showNotification('🔗 已生成共享連結（含首圖與路線）', 'success');
             return;
@@ -2480,7 +2499,7 @@ async function shareMarkerByIdUrl(markerId) {
         payload = { ...basePayload, images: [], routes: ultraRoutes };
         url = buildCompressedShareLink(payload);
         if (url.length <= MAX_URL_LENGTH_FOR_SHARE) {
-            const ok = await tryWebShare('分享標註（含路線，不含圖片）', `${marker.icon} ${marker.name}`, url);
+            const ok = openTelegramShare('分享標註（含路線，不含圖片）', `${marker.icon} ${marker.name}`, url);
             if (!ok) await copyToClipboard(url);
             showNotification('🔗 已生成共享連結（含路線，圖片過長已省略）', 'info');
             return;
@@ -2489,7 +2508,7 @@ async function shareMarkerByIdUrl(markerId) {
     // 最小：僅基本資訊與目前選擇路線摘要（若有）
     const minimalPayload = { ...basePayload, routes: (selectedRouteSummary ? [selectedRouteSummary] : []) };
     const minimalUrl = buildCompressedShareLink(minimalPayload);
-    const ok2 = await tryWebShare('分享標註（精簡連結）', `${marker.icon} ${marker.name}`, minimalUrl);
+    const ok2 = openTelegramShare('分享標註（精簡連結）', `${marker.icon} ${marker.name}`, minimalUrl);
     if (!ok2) await copyToClipboard(minimalUrl);
     showNotification('ℹ️ 連結過長，已以精簡模式分享（可能不含圖片）', 'warning');
 }
@@ -2530,6 +2549,8 @@ async function shareMarkerByIdFile(markerId) {
         document.body.removeChild(a);
         URL.revokeObjectURL(urlObj);
         showNotification('📥 已下載分享檔案（含圖片與路線）', 'info');
+        // 嘗試開啟 Telegram 分享頁，提醒使用者傳送已下載檔案
+        openTelegramShare('分享標註檔案', `${marker.icon} ${marker.name}：已下載 ${fileName}，請在 Telegram 中選擇並傳送此檔案。`);
     } catch (e) {
         console.error('建立完整分享資料失敗：', e);
         showNotification('❌ 建立分享檔案失敗', 'error');
@@ -2558,7 +2579,7 @@ async function shareMarkerByIdPointUrl(markerId) {
         images: []
     };
     const url = buildShareLink(payload); // 舊版 shared，避免使用 gzip 以兼容舊頁面
-    const ok = await tryWebShare('分享定位點（僅標註）', `${marker.icon} ${marker.name}`, url);
+    const ok = openTelegramShare('分享定位點（僅標註）', `${marker.icon} ${marker.name}`, url);
     if (!ok) await copyToClipboard(url);
     showNotification('🔗 已生成共享連結（僅定位點）', 'success');
 }
@@ -3856,14 +3877,14 @@ function initDragFunctionality() {
     const notificationBtn = document.getElementById('notificationBtn');
     const centerMapBtn = document.getElementById('centerMapBtn');
     const floatingHelpBtn = document.getElementById('floatingHelpBtn');
-    const shareLocationBtn = document.getElementById('shareLocationBtn');
+    // const shareLocationBtn = document.getElementById('shareLocationBtn'); // 已移除
     
     if (addMarkerBtn) addMobileTouchSupport(addMarkerBtn, 'toggleAddMarkerMode');
     if (trackingBtn) addMobileTouchSupport(trackingBtn, 'toggleTracking');
     if (notificationBtn) addMobileTouchSupport(notificationBtn, 'toggleNotifications');
     if (centerMapBtn) addMobileTouchSupport(centerMapBtn, 'centerMapToCurrentLocation');
     if (floatingHelpBtn) addMobileTouchSupport(floatingHelpBtn, 'showHelpModal');
-    if (shareLocationBtn) addMobileTouchSupport(shareLocationBtn, 'shareCurrentLocation');
+    // 分享目前位置（快速操作）已取消，不再綁定觸控分享
 
     // 額外保險：直接在旋轉按鈕上綁定觸控與點擊（避免部分瀏覽器事件相容性問題）
     if (rotateBtn) {
@@ -5402,9 +5423,9 @@ function updateMarkerPopup(marker) {
                 <button onclick="editMarker('${marker.id}')" style="padding: 4px 8px; font-size: 12px;">編輯</button>
                 ${trackingButton}
                 <button onclick="showOnlyThisMarker('${marker.id}')" style="padding: 4px 8px; font-size: 12px;">只顯示</button>
-                <button onclick="shareMarkerByIdPointUrl('${marker.id}')" style="padding: 4px 8px; font-size: 12px;">網址分享（僅定位點）</button>
-                <button onclick="shareMarkerByIdUrl('${marker.id}')" style="padding: 4px 8px; font-size: 12px;">網址分享（含圖片與路線）</button>
-                <button onclick="shareMarkerByIdFile('${marker.id}')" style="padding: 4px 8px; font-size: 12px;">完整檔案分享</button>
+                <button onclick="shareMarkerByIdPointUrl('${marker.id}')" style="padding: 4px 8px; font-size: 12px;">Telegram分享（僅定位點）</button>
+                <button onclick="shareMarkerByIdUrl('${marker.id}')" style="padding: 4px 8px; font-size: 12px;">Telegram分享（圖片與路線）</button>
+                <button onclick="shareMarkerByIdFile('${marker.id}')" style="padding: 4px 8px; font-size: 12px;">完整檔案分享（下載後呼叫分享）</button>
             </div>
             ${routeManagementSection}
         </div>
