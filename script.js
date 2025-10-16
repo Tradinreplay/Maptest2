@@ -2465,6 +2465,52 @@ async function shareMarkerByIdUrl(markerId) {
             return;
         }
     } catch {}
+    // 進一步縮短：保留首圖，路線降至 60 點
+    try {
+        const limitedImages = Array.isArray(images) && images.length > 0 ? [images[0]] : [];
+        const tinyImage = limitedImages.length ? [await compressImageForShare(limitedImages[0], 3, 360)] : [];
+        const ultraSlimRoutes = (Array.isArray(routeSummaries) ? routeSummaries.map(r => ({
+            name: r.name,
+            distance: r.distance,
+            duration: r.duration,
+            color: r.color,
+            createdAt: r.createdAt,
+            startMarkerName: r.startMarkerName,
+            targetMarkerName: r.targetMarkerName,
+            points: simplifyRouteCoordinates(r.points, 60)
+        })) : []);
+        payload = { ...basePayload, images: tinyImage, routes: ultraSlimRoutes };
+        url = buildCompressedShareLink(payload);
+        if (url.length <= MAX_URL_LENGTH_FOR_SHARE) {
+            const ok = await tryWebShare('分享標註（含首圖與路線）', `${marker.icon} ${marker.name}`, url);
+            if (!ok) await copyToClipboard(url);
+            showNotification('🔗 已生成共享連結（含首圖與路線，已極限壓縮）', 'success');
+            return;
+        }
+    } catch {}
+    // 極限縮短：保留首圖，路線降至 30 點
+    try {
+        const limitedImages = Array.isArray(images) && images.length > 0 ? [images[0]] : [];
+        const tinyImage = limitedImages.length ? [await compressImageForShare(limitedImages[0], 3, 360)] : [];
+        const ultraSlimRoutes2 = (Array.isArray(routeSummaries) ? routeSummaries.map(r => ({
+            name: r.name,
+            distance: r.distance,
+            duration: r.duration,
+            color: r.color,
+            createdAt: r.createdAt,
+            startMarkerName: r.startMarkerName,
+            targetMarkerName: r.targetMarkerName,
+            points: simplifyRouteCoordinates(r.points, 30)
+        })) : []);
+        payload = { ...basePayload, images: tinyImage, routes: ultraSlimRoutes2 };
+        url = buildCompressedShareLink(payload);
+        if (url.length <= MAX_URL_LENGTH_FOR_SHARE) {
+            const ok = await tryWebShare('分享標註（含首圖與路線）', `${marker.icon} ${marker.name}`, url);
+            if (!ok) await copyToClipboard(url);
+            showNotification('🔗 已生成共享連結（含首圖與路線，極限精簡）', 'success');
+            return;
+        }
+    } catch {}
     // 僅路線（降至 80 點）
     try {
         const ultraRoutes = (Array.isArray(routeSummaries) ? routeSummaries.map(r => ({
@@ -2597,7 +2643,7 @@ function addTemporarySharedLocationMarker(lat, lng) {
         <div style="font-size:12px; color:#555;">${lat.toFixed(6)}, ${lng.toFixed(6)}</div>
     </div>`).openPopup();
     map.setView([lat, lng], Math.max(map.getZoom(), 15), { animate: true });
-    setTimeout(() => { try { map.removeLayer(temp); } catch {} }, 30000);
+    setTimeout(() => { try { map.removeLayer(temp); } catch {} }, 60000);
 }
 
 function prefillMarkerFormFromPayload(payload) {
@@ -2648,7 +2694,7 @@ function prefillMarkerFormFromPayload(payload) {
             ${payload.description ? `<div style=\"font-size:12px; color:#555;\">${payload.description}</div>` : ''}
         </div>`).openPopup();
         // 15 秒後自動移除臨時標記
-        setTimeout(() => { try { map.removeLayer(temp); } catch {} }, 15000);
+        setTimeout(() => { try { map.removeLayer(temp); } catch {} }, 60000);
     } catch (e) {}
 }
 
@@ -2677,7 +2723,8 @@ function showSaveSharedMarkerPrompt(payload) {
             align-items: center;
         `;
         const label = document.createElement('span');
-        label.textContent = '已載入共享標註與路線';
+        const hasRoutes = Array.isArray(payload?.routes) && payload.routes.length > 0;
+        label.textContent = hasRoutes ? '已載入共享標註與路線' : '已載入共享標註';
         const saveBtn = document.createElement('button');
         saveBtn.textContent = '一鍵保存';
         saveBtn.style.cssText = 'padding: 6px 10px; font-size: 13px; background:#4CAF50; color:#fff; border:none; border-radius:6px;';
@@ -2799,22 +2846,64 @@ function handleSharedLinkOnInit() {
                     const jsonStrGz = (typeof pako !== 'undefined' && pako && typeof pako.inflate === 'function') ? pako.inflate(bytes, { to: 'string' }) : '';
                     payload = JSON.parse(jsonStrGz);
                 } else {
-                    const raw = params.get('shared');
-                    const jsonStr = base64DecodeUnicode(raw);
-                    payload = JSON.parse(jsonStr);
+                    let raw = params.get('shared');
+                    // 一些環境會將 '+' 轉為空格（URLSearchParams 行為）；需還原以免破壞 Base64
+                    if (typeof raw === 'string') raw = raw.replace(/\s/g, '+');
+                    let jsonStr = '';
+                    try {
+                        jsonStr = base64DecodeUnicode(raw);
+                        const cleaned = typeof jsonStr === 'string' ? jsonStr.replace(/[\u0000-\u001F]+/g, '') : jsonStr;
+                        payload = JSON.parse(cleaned);
+                    } catch (e1) {
+                        // 回退：嘗試以 URL-safe Base64 解析並使用 TextDecoder
+                        try {
+                            const bytesAlt = base64UrlToBytes(raw);
+                            const strAlt = (typeof TextDecoder !== 'undefined') ? new TextDecoder().decode(bytesAlt) : '';
+                            const cleanedAlt = typeof strAlt === 'string' ? strAlt.replace(/[\u0000-\u001F]+/g, '') : strAlt;
+                            payload = JSON.parse(cleanedAlt);
+                        } catch (e2) {
+                            throw e1; // 保留原始錯誤至上層捕獲
+                        }
+                    }
                 }
             } catch (e) {
                 console.error('解析共享連結內容失敗：', e);
                 payload = null;
             }
             if (payload && payload.type === 'marker') {
-                prefillMarkerFormFromPayload(payload);
-                // 若有路線資料，顯示一鍵保存提示以正式保存標註與路線
+                // 若初始設定視窗正在顯示，延後到關閉後再預填標註，避免被覆蓋而看不到
                 try {
-                    if (Array.isArray(payload.routes) && payload.routes.length > 0) {
-                        showSaveSharedMarkerPrompt(payload);
+                    const setupModal = document.getElementById('initialSetupModal');
+                    const setupVisible = !!(setupModal && (setupModal.style.display !== 'none' || (typeof window.getComputedStyle === 'function' && window.getComputedStyle(setupModal).display !== 'none')));
+                    if (setupVisible) {
+                        // 暫存 payload，待初始設定關閉後再顯示
+                        window.pendingSharedMarkerPayload = payload;
+                        // 輕量輪詢檢查初始設定視窗是否關閉
+                        const checkAfterSetupClosed = () => {
+                            const stillVisible = !!(setupModal && (setupModal.style.display !== 'none' || (typeof window.getComputedStyle === 'function' && window.getComputedStyle(setupModal).display !== 'none')));
+                            if (!stillVisible && window.pendingSharedMarkerPayload) {
+                                try { prefillMarkerFormFromPayload(window.pendingSharedMarkerPayload); } catch (e) {}
+                                try { showSaveSharedMarkerPrompt(window.pendingSharedMarkerPayload); } catch (e) {}
+                                window.pendingSharedMarkerPayload = null;
+                                clearInterval(window._pendingSharedMarkerIntervalId);
+                                window._pendingSharedMarkerIntervalId = null;
+                            }
+                        };
+                        // 啟動輪詢（300ms），並在跳頁或重載時自動釋放
+                        try { if (window._pendingSharedMarkerIntervalId) clearInterval(window._pendingSharedMarkerIntervalId); } catch (e) {}
+                        window._pendingSharedMarkerIntervalId = setInterval(checkAfterSetupClosed, 300);
+                        // 先提示使用者共享內容已載入
+                        showNotification('📍 已載入共享標註，請先完成初始設定', 'info');
+                    } else {
+                        // 直接預填並顯示提示
+                        prefillMarkerFormFromPayload(payload);
+                        try { showSaveSharedMarkerPrompt(payload); } catch (e) {}
                     }
-                } catch (e) {}
+                } catch (e) {
+                    // 回退：如檢查過程出現問題，直接顯示
+                    prefillMarkerFormFromPayload(payload);
+                    try { showSaveSharedMarkerPrompt(payload); } catch (err) {}
+                }
                 // 若要求開啟追蹤，嘗試啟用追蹤（無目標亦可啟動定位）
                 try { if (payload.trackingEnabled && typeof startTracking === 'function') startTracking(); } catch (e) {}
                 // 若包含路線提示，且本地已存在相同名稱/群組的標記，嘗試套用
