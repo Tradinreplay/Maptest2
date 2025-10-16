@@ -2465,6 +2465,52 @@ async function shareMarkerByIdUrl(markerId) {
             return;
         }
     } catch {}
+    // 進一步縮短：保留首圖，路線降至 60 點
+    try {
+        const limitedImages = Array.isArray(images) && images.length > 0 ? [images[0]] : [];
+        const tinyImage = limitedImages.length ? [await compressImageForShare(limitedImages[0], 3, 360)] : [];
+        const ultraSlimRoutes = (Array.isArray(routeSummaries) ? routeSummaries.map(r => ({
+            name: r.name,
+            distance: r.distance,
+            duration: r.duration,
+            color: r.color,
+            createdAt: r.createdAt,
+            startMarkerName: r.startMarkerName,
+            targetMarkerName: r.targetMarkerName,
+            points: simplifyRouteCoordinates(r.points, 60)
+        })) : []);
+        payload = { ...basePayload, images: tinyImage, routes: ultraSlimRoutes };
+        url = buildCompressedShareLink(payload);
+        if (url.length <= MAX_URL_LENGTH_FOR_SHARE) {
+            const ok = await tryWebShare('分享標註（含首圖與路線）', `${marker.icon} ${marker.name}`, url);
+            if (!ok) await copyToClipboard(url);
+            showNotification('🔗 已生成共享連結（含首圖與路線，已極限壓縮）', 'success');
+            return;
+        }
+    } catch {}
+    // 極限縮短：保留首圖，路線降至 30 點
+    try {
+        const limitedImages = Array.isArray(images) && images.length > 0 ? [images[0]] : [];
+        const tinyImage = limitedImages.length ? [await compressImageForShare(limitedImages[0], 3, 360)] : [];
+        const ultraSlimRoutes2 = (Array.isArray(routeSummaries) ? routeSummaries.map(r => ({
+            name: r.name,
+            distance: r.distance,
+            duration: r.duration,
+            color: r.color,
+            createdAt: r.createdAt,
+            startMarkerName: r.startMarkerName,
+            targetMarkerName: r.targetMarkerName,
+            points: simplifyRouteCoordinates(r.points, 30)
+        })) : []);
+        payload = { ...basePayload, images: tinyImage, routes: ultraSlimRoutes2 };
+        url = buildCompressedShareLink(payload);
+        if (url.length <= MAX_URL_LENGTH_FOR_SHARE) {
+            const ok = await tryWebShare('分享標註（含首圖與路線）', `${marker.icon} ${marker.name}`, url);
+            if (!ok) await copyToClipboard(url);
+            showNotification('🔗 已生成共享連結（含首圖與路線，極限精簡）', 'success');
+            return;
+        }
+    } catch {}
     // 僅路線（降至 80 點）
     try {
         const ultraRoutes = (Array.isArray(routeSummaries) ? routeSummaries.map(r => ({
@@ -2597,7 +2643,7 @@ function addTemporarySharedLocationMarker(lat, lng) {
         <div style="font-size:12px; color:#555;">${lat.toFixed(6)}, ${lng.toFixed(6)}</div>
     </div>`).openPopup();
     map.setView([lat, lng], Math.max(map.getZoom(), 15), { animate: true });
-    setTimeout(() => { try { map.removeLayer(temp); } catch {} }, 30000);
+    setTimeout(() => { try { map.removeLayer(temp); } catch {} }, 60000);
 }
 
 function prefillMarkerFormFromPayload(payload) {
@@ -2648,7 +2694,7 @@ function prefillMarkerFormFromPayload(payload) {
             ${payload.description ? `<div style=\"font-size:12px; color:#555;\">${payload.description}</div>` : ''}
         </div>`).openPopup();
         // 15 秒後自動移除臨時標記
-        setTimeout(() => { try { map.removeLayer(temp); } catch {} }, 15000);
+        setTimeout(() => { try { map.removeLayer(temp); } catch {} }, 60000);
     } catch (e) {}
 }
 
