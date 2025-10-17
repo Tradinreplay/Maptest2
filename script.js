@@ -2098,6 +2098,18 @@ async function tryWebShare(title, text, url) {
     return false;
 }
 
+// 新增：Telegram 分享（優先打開 Telegram 的網址分享頁）
+function openTelegramShare(url, text) {
+    try {
+        const tgUrl = `https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text || '')}`;
+        const win = window.open(tgUrl, '_blank');
+        return !!win;
+    } catch (e) {
+        console.warn('打開 Telegram 分享失敗：', e);
+        return false;
+    }
+}
+
 // 建立含圖片與路線的單一標註分享資料（與匯入格式相容）
 async function buildFullMarkerShareData(marker) {
     try {
@@ -2375,7 +2387,7 @@ async function shareMarkerById(markerId) {
 }
 
 // 新增：僅網址分享（含圖片與路線），不觸發檔案分享回退
-async function shareMarkerByIdUrl(markerId) {
+async function shareMarkerByIdUrl(markerId, preferTelegram = false) {
     const marker = markers.find(m => m.id === markerId);
     if (!marker) { showNotification('❌ 找不到要分享的標註點', 'error'); return; }
     const MAX_URL_LENGTH_FOR_SHARE = 8000;
@@ -2420,6 +2432,7 @@ async function shareMarkerByIdUrl(markerId) {
             routeSummaries = marker.routeRecords.map(r => buildRouteSummaryForShareWithLimit(r, 120)).filter(Boolean);
         }
     } catch (e) { routeSummaries = []; }
+    const useTelegram = preferTelegram || (Array.isArray(routeSummaries) && routeSummaries.length > 0);
     const basePayload = {
         type: 'marker',
         name: marker.name || '',
@@ -2437,9 +2450,18 @@ async function shareMarkerByIdUrl(markerId) {
     let payload = { ...basePayload, images: images || [], routes: routeSummaries };
     let url = buildCompressedShareLink(payload);
     if (url.length <= MAX_URL_LENGTH_FOR_SHARE) {
-        const ok = await tryWebShare('分享標註（含圖片與路線）', `${marker.icon} ${marker.name}`, url);
-        if (!ok) await copyToClipboard(url);
-        showNotification('🔗 已生成共享連結（含圖片與路線）', 'success');
+        if (useTelegram) {
+            const opened = openTelegramShare(url, `${marker.icon} ${marker.name}`);
+            if (!opened) {
+                const ok = await tryWebShare('分享標註（含圖片與路線）', `${marker.icon} ${marker.name}`, url);
+                if (!ok) await copyToClipboard(url);
+            }
+            showNotification('🔗 已開啟 Telegram 分享（含圖片與路線）', 'success');
+        } else {
+            const ok = await tryWebShare('分享標註（含圖片與路線）', `${marker.icon} ${marker.name}`, url);
+            if (!ok) await copyToClipboard(url);
+            showNotification('🔗 已生成共享連結（含圖片與路線）', 'success');
+        }
         return;
     }
     // 精簡：首圖 + 路線降點
@@ -2459,9 +2481,18 @@ async function shareMarkerByIdUrl(markerId) {
         payload = { ...basePayload, images: slimImages, routes: slimRoutes };
         url = buildCompressedShareLink(payload);
         if (url.length <= MAX_URL_LENGTH_FOR_SHARE) {
-            const ok = await tryWebShare('分享標註（含首圖與路線）', `${marker.icon} ${marker.name}`, url);
-            if (!ok) await copyToClipboard(url);
-            showNotification('🔗 已生成共享連結（含首圖與路線）', 'success');
+            if (useTelegram) {
+                const opened = openTelegramShare(url, `${marker.icon} ${marker.name}`);
+                if (!opened) {
+                    const ok = await tryWebShare('分享標註（含首圖與路線）', `${marker.icon} ${marker.name}`, url);
+                    if (!ok) await copyToClipboard(url);
+                }
+                showNotification('🔗 已開啟 Telegram 分享（含首圖與路線）', 'success');
+            } else {
+                const ok = await tryWebShare('分享標註（含首圖與路線）', `${marker.icon} ${marker.name}`, url);
+                if (!ok) await copyToClipboard(url);
+                showNotification('🔗 已生成共享連結（含首圖與路線）', 'success');
+            }
             return;
         }
     } catch {}
@@ -2480,18 +2511,36 @@ async function shareMarkerByIdUrl(markerId) {
         payload = { ...basePayload, images: [], routes: ultraRoutes };
         url = buildCompressedShareLink(payload);
         if (url.length <= MAX_URL_LENGTH_FOR_SHARE) {
-            const ok = await tryWebShare('分享標註（含路線，不含圖片）', `${marker.icon} ${marker.name}`, url);
-            if (!ok) await copyToClipboard(url);
-            showNotification('🔗 已生成共享連結（含路線，圖片過長已省略）', 'info');
+            if (useTelegram) {
+                const opened = openTelegramShare(url, `${marker.icon} ${marker.name}`);
+                if (!opened) {
+                    const ok = await tryWebShare('分享標註（含路線，不含圖片）', `${marker.icon} ${marker.name}`, url);
+                    if (!ok) await copyToClipboard(url);
+                }
+                showNotification('🔗 已開啟 Telegram 分享（含路線，不含圖片）', 'info');
+            } else {
+                const ok = await tryWebShare('分享標註（含路線，不含圖片）', `${marker.icon} ${marker.name}`, url);
+                if (!ok) await copyToClipboard(url);
+                showNotification('🔗 已生成共享連結（含路線，圖片過長已省略）', 'info');
+            }
             return;
         }
     } catch {}
     // 最小：僅基本資訊與目前選擇路線摘要（若有）
     const minimalPayload = { ...basePayload, routes: (selectedRouteSummary ? [selectedRouteSummary] : []) };
     const minimalUrl = buildCompressedShareLink(minimalPayload);
-    const ok2 = await tryWebShare('分享標註（精簡連結）', `${marker.icon} ${marker.name}`, minimalUrl);
-    if (!ok2) await copyToClipboard(minimalUrl);
-    showNotification('ℹ️ 連結過長，已以精簡模式分享（可能不含圖片）', 'warning');
+    if (useTelegram) {
+        const opened = openTelegramShare(minimalUrl, `${marker.icon} ${marker.name}`);
+        if (!opened) {
+            const ok2 = await tryWebShare('分享標註（精簡連結）', `${marker.icon} ${marker.name}`, minimalUrl);
+            if (!ok2) await copyToClipboard(minimalUrl);
+        }
+        showNotification('ℹ️ 連結過長，已以精簡模式透過 Telegram 分享（可能不含圖片）', 'warning');
+    } else {
+        const ok2 = await tryWebShare('分享標註（精簡連結）', `${marker.icon} ${marker.name}`, minimalUrl);
+        if (!ok2) await copyToClipboard(minimalUrl);
+        showNotification('ℹ️ 連結過長，已以精簡模式分享（可能不含圖片）', 'warning');
+    }
 }
 
 // 新增：僅完整檔案分享（含所有圖片與路線），不產生網址
@@ -2530,6 +2579,17 @@ async function shareMarkerByIdFile(markerId) {
         document.body.removeChild(a);
         URL.revokeObjectURL(urlObj);
         showNotification('📥 已下載分享檔案（含圖片與路線）', 'info');
+        // 下載完成後，直接呼叫分享視窗（分享提示文字）
+        if (navigator.share) {
+            try {
+                await navigator.share({
+                    title: '分享已下載檔案',
+                    text: `${marker.icon} ${marker.name}｜檔名：${fileName}\n請在聊天應用中附加此檔案`
+                });
+            } catch (e) {
+                console.warn('下載後呼叫分享視窗失敗：', e);
+            }
+        }
     } catch (e) {
         console.error('建立完整分享資料失敗：', e);
         showNotification('❌ 建立分享檔案失敗', 'error');
@@ -5402,8 +5462,7 @@ function updateMarkerPopup(marker) {
                 <button onclick="editMarker('${marker.id}')" style="padding: 4px 8px; font-size: 12px;">編輯</button>
                 ${trackingButton}
                 <button onclick="showOnlyThisMarker('${marker.id}')" style="padding: 4px 8px; font-size: 12px;">只顯示</button>
-                <button onclick="shareMarkerByIdPointUrl('${marker.id}')" style="padding: 4px 8px; font-size: 12px;">網址分享（僅定位點）</button>
-                <button onclick="shareMarkerByIdUrl('${marker.id}')" style="padding: 4px 8px; font-size: 12px;">網址分享（含圖片與路線）</button>
+                <button onclick="shareMarkerByIdUrl('${marker.id}')" style="padding: 4px 8px; font-size: 12px;">網址分享（定位點與路線）</button>
                 <button onclick="shareMarkerByIdFile('${marker.id}')" style="padding: 4px 8px; font-size: 12px;">完整檔案分享</button>
             </div>
             ${routeManagementSection}
