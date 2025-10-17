@@ -2547,12 +2547,6 @@ async function shareMarkerByIdUrl(markerId, preferTelegram = false) {
 async function shareMarkerByIdFile(markerId) {
     const marker = markers.find(m => m.id === markerId);
     if (!marker) { showNotification('❌ 找不到要分享的標註點', 'error'); return; }
-    // 若包含路線記錄，遵循規則改以 Telegram 分享網址
-    if (Array.isArray(marker.routeRecords) && marker.routeRecords.length > 0) {
-        showNotification('ℹ️ 此標註包含路線記錄，將改以 Telegram 分享網址', 'info');
-        await shareMarkerByIdUrl(markerId, true);
-        return;
-    }
     try {
         const fullData = await buildFullMarkerShareData(marker);
         const dataStr = JSON.stringify(fullData, null, 2);
@@ -2584,7 +2578,7 @@ async function shareMarkerByIdFile(markerId) {
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(urlObj);
-        showNotification('📥 已下載分享檔案（含圖片）', 'info');
+        showNotification('📥 已下載分享檔案（含圖片與路線）', 'info');
         // 下載完成後，直接呼叫分享視窗（分享提示文字）
         if (navigator.share) {
             try {
