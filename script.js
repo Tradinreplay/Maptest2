@@ -5402,6 +5402,7 @@ function updateMarkerPopup(marker) {
                 <button onclick="editMarker('${marker.id}')" style="padding: 4px 8px; font-size: 12px;">編輯</button>
                 ${trackingButton}
                 <button onclick="showOnlyThisMarker('${marker.id}')" style="padding: 4px 8px; font-size: 12px;">只顯示</button>
+                <button onclick="shareMarkerByIdPointUrl('${marker.id}')" style="padding: 4px 8px; font-size: 12px;">網址分享（僅定位點）</button>
                 <button onclick="shareMarkerByIdUrl('${marker.id}')" style="padding: 4px 8px; font-size: 12px;">網址分享（含圖片與路線）</button>
                 <button onclick="shareMarkerByIdFile('${marker.id}')" style="padding: 4px 8px; font-size: 12px;">完整檔案分享</button>
             </div>
