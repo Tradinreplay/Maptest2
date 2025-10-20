@@ -2536,31 +2536,23 @@ async function shareMarkerByIdFile(markerId) {
     }
 }
 
-// 新增：僅定位點的網址分享（不包含圖片與路線），相容舊版 shared 參數
+// 新增：僅定位點的網址分享（只含經緯度與名稱）
 async function shareMarkerByIdPointUrl(markerId) {
     const marker = markers.find(m => m.id === markerId);
     if (!marker) { showNotification('❌ 找不到要分享的標註點', 'error'); return; }
-    const group = groups ? groups.find(g => g.id === marker.groupId) : null;
-    const subgroup = group && group.subgroups ? group.subgroups.find(sg => sg.id === marker.subgroupId) : null;
     const currentZoom = (typeof map !== 'undefined' && map && typeof map.getZoom === 'function') ? map.getZoom() : null;
+    // 僅包含必要欄位：type、name、lat、lng（可選：zoom）
     const payload = {
         type: 'marker',
         name: marker.name || '',
-        description: truncateString(marker.description || '', 200),
         lat: marker.lat,
         lng: marker.lng,
-        color: marker.color || 'red',
-        icon: marker.icon || '📍',
-        zoom: currentZoom,
-        filter: subgroup ? { type: 'subgroup', groupName: group?.name || '', subgroupName: subgroup?.name || '' } : (group ? { type: 'group', groupName: group.name || '' } : null),
-        trackingEnabled: !!isTracking,
-        route: null,
-        images: []
+        zoom: currentZoom
     };
-    const url = buildShareLink(payload); // 舊版 shared，避免使用 gzip 以兼容舊頁面
-    const ok = await tryWebShare('分享定位點（僅標註）', `${marker.icon} ${marker.name}`, url);
+    const url = buildShareLink(payload); // 使用 shared 參數，確保舊頁面相容
+    const ok = await tryWebShare('分享定位點（僅座標/名稱）', `${marker.name}`, url);
     if (!ok) await copyToClipboard(url);
-    showNotification('🔗 已生成共享連結（僅定位點）', 'success');
+    showNotification('🔗 已生成共享連結（僅座標/名稱）', 'success');
 }
 
 function shareCurrentLocation() {
@@ -2807,7 +2799,25 @@ function handleSharedLinkOnInit() {
                 console.error('解析共享連結內容失敗：', e);
                 payload = null;
             }
+
+            // 內部：判斷是否為最小標註payload（僅座標與名稱）
+            const isMinimalMarkerPayload = (p) => {
+                if (!p || p.type !== 'marker') return false;
+                if (typeof p.lat !== 'number' || typeof p.lng !== 'number') return false;
+                const hasRoutes = Array.isArray(p.routes) && p.routes.length > 0;
+                const hasImages = Array.isArray(p.images) ? p.images.length > 0 : !!p.images;
+                const hasExtra = ('description' in p) || ('color' in p) || ('icon' in p) || ('filter' in p) || ('groupId' in p) || ('subgroupId' in p);
+                return !hasRoutes && !hasImages && !hasExtra;
+            };
+
             if (payload && payload.type === 'marker') {
+                if (isMinimalMarkerPayload(payload)) {
+                    try { saveSharedMarkerAndRoutes(payload); } catch (e) { console.error(e); }
+                    // 套用縮放層級（如果有）
+                    try { if (payload.zoom && typeof map !== 'undefined' && map && typeof map.setView === 'function') { map.setView([payload.lat, payload.lng], payload.zoom, { animate: true }); } } catch (e) {}
+                    showNotification('✅ 已自動保存共享標註', 'success');
+                    return;
+                }
                 prefillMarkerFormFromPayload(payload);
                 // 若有路線資料，顯示一鍵保存提示以正式保存標註與路線
                 try {
@@ -5402,9 +5412,9 @@ function updateMarkerPopup(marker) {
                 <button onclick="editMarker('${marker.id}')" style="padding: 4px 8px; font-size: 12px;">編輯</button>
                 ${trackingButton}
                 <button onclick="showOnlyThisMarker('${marker.id}')" style="padding: 4px 8px; font-size: 12px;">只顯示</button>
-                <button onclick="shareMarkerByIdPointUrl('${marker.id}')" style="padding: 4px 8px; font-size: 12px;">網址分享（僅定位點）</button>
                 <button onclick="shareMarkerByIdUrl('${marker.id}')" style="padding: 4px 8px; font-size: 12px;">網址分享（含圖片與路線）</button>
-                <button onclick="shareMarkerByIdFile('${marker.id}')" style="padding: 4px 8px; font-size: 12px;">完整檔案分享</button>
+<button onclick="shareMarkerByIdPointUrl('${marker.id}')" style="padding: 4px 8px; font-size: 12px;">僅座標/名稱網址分享</button>
+<button onclick="shareMarkerByIdFile('${marker.id}')" style="padding: 4px 8px; font-size: 12px;">完整檔案分享</button>
             </div>
             ${routeManagementSection}
         </div>
