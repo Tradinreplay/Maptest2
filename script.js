@@ -1950,12 +1950,21 @@ function base64EncodeUnicode(str) {
 
 function base64DecodeUnicode(str) {
     try {
-        return decodeURIComponent(atob(str).split('').map(function(c) {
+        let s = (str || '');
+        // 正規化：空白視為 '+'、處理 base64url 與補齊 '='，並移除非 base64 字元
+        s = s.replace(/\s+/g, '+').replace(/-/g, '+').replace(/_/g, '/');
+        s = s.replace(/[^A-Za-z0-9+/=]/g, '');
+        if (s.length % 4 !== 0) s += '='.repeat(4 - (s.length % 4));
+        return decodeURIComponent(atob(s).split('').map(function(c) {
             return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
         }).join(''));
     } catch (e) {
         try {
-            const binary = atob(str);
+            let s = (str || '');
+            s = s.replace(/\s+/g, '+').replace(/-/g, '+').replace(/_/g, '/');
+            s = s.replace(/[^A-Za-z0-9+/=]/g, '');
+            if (s.length % 4 !== 0) s += '='.repeat(4 - (s.length % 4));
+            const binary = atob(s);
             const bytes = new Uint8Array(binary.length);
             for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
             return new TextDecoder().decode(bytes);
