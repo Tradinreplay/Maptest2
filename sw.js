@@ -1,11 +1,19 @@
 // Enhanced Service Worker for background notifications
-const CACHE_NAME = 'map-tracker-marker-press-20240927-v2';
+const CACHE_NAME = 'map-tracker-marker-press-20240927-v4';
 const urlsToCache = [
     './',
     './index.html',
     './script.js',
     './styles.css',
-    './sw.js'
+    './sw.js',
+    './supabase-client.js',
+    './notification-sound.js',
+    './android-integration.js',
+    './rotation.js',
+    './rotation.css',
+    './path-color.css',
+    './manifest.json',
+    './TG.png'
 ];
 
 // Install event - 立即激活新版本
