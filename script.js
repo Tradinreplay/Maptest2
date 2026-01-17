@@ -78,187 +78,6 @@ function setupRouteLineMonitoring() {
     }
 }
 
-// Add to global scope
-window.showUserLocationOnMap = function(lat, lng, title) {
-    if (!map) return;
-    
-    // Remove existing admin viewed location marker
-    if (window.adminViewLocationMarker) {
-        map.removeLayer(window.adminViewLocationMarker);
-    }
-    
-    const icon = L.divIcon({
-        className: 'custom-div-icon',
-        html: `<div style="background-color: #ff9800; width: 15px; height: 15px; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 10px rgba(0,0,0,0.5);"></div>`,
-        iconSize: [20, 20],
-        iconAnchor: [10, 10]
-    });
-    
-    window.adminViewLocationMarker = L.marker([lat, lng], {icon: icon})
-        .bindPopup(title)
-        .addTo(map)
-        .openPopup();
-        
-    map.setView([lat, lng], 15);
-};
-
-// Location Update Logic
-let lastUploadTime = 0;
-const UPLOAD_INTERVAL = 30000; // 30 seconds
-
-function checkAndUploadLocation(lat, lng) {
-    const now = Date.now();
-    if (now - lastUploadTime > UPLOAD_INTERVAL) {
-        if (window.updateUserLocation) {
-            window.updateUserLocation(lat, lng);
-            lastUploadTime = now;
-            // console.log('Location uploaded');
-        }
-    }
-}
-
-// Hook into existing location updates (assuming updateCurrentLocation or similar is used)
-// We'll use a Proxy or just find the geolocation success callback.
-// Since I cannot see the full file, I will append a watcher setup at the end of DOMContentLoaded or init.
-
-document.addEventListener('DOMContentLoaded', () => {
-    // Start a separate interval for uploading location if we have a position
-    setInterval(() => {
-        if (currentPosition) {
-             checkAndUploadLocation(currentPosition.lat, currentPosition.lng);
-        }
-    }, 5000); // Check every 5 seconds if we need to upload (logic inside checkAndUploadLocation handles the 30s limit)
-});
-
-window.updateAppState = function(newMarkers, newGroups) {
-    // 1. Clear existing markers from map
-    if (markers && markers.length > 0) {
-        markers.forEach(m => {
-            if (m.leafletMarker) {
-                map.removeLayer(m.leafletMarker);
-            }
-        });
-    }
-    
-    // Clear routes from map
-    if (window.displayedRoutes) {
-        window.displayedRoutes.forEach(layer => map.removeLayer(layer));
-        window.displayedRoutes.clear();
-    }
-    if (window.defaultRouteLine) {
-        map.removeLayer(window.defaultRouteLine);
-        window.defaultRouteLine = null;
-    }
-    if (window.routeLine) {
-        map.removeLayer(window.routeLine);
-        window.routeLine = null;
-    }
-    
-    // 2. Clear arrays
-    markers = [];
-    groups = [];
-    currentGroup = null;
-    currentSubgroup = null;
-    
-    // 3. Rebuild Groups
-    groups = newGroups.map(groupData => {
-        const group = new Group(groupData.id, groupData.name);
-        group.subgroups = groupData.subgroups.map(subgroupData => 
-            new Subgroup(subgroupData.id, subgroupData.name, subgroupData.groupId)
-        );
-        return group;
-    });
-    
-    // 4. Rebuild Markers
-    markers = newMarkers.map(markerData => {
-        const marker = new Marker(
-            markerData.id,
-            markerData.name,
-            markerData.description,
-            markerData.lat,
-            markerData.lng,
-            markerData.groupId,
-            markerData.subgroupId,
-            markerData.color || 'red',
-            markerData.icon || '📍',
-            markerData.imageData || null
-        );
-        
-        if (markerData.routeRecords && Array.isArray(markerData.routeRecords)) {
-            marker.routeRecords = markerData.routeRecords;
-        }
-        
-        return marker;
-    });
-    
-    // 5. Re-establish relationships
-    markers.forEach(marker => {
-        const group = groups.find(g => g.id === marker.groupId);
-        if (group) {
-            group.addMarker(marker);
-            if (marker.subgroupId) {
-                const subgroup = group.subgroups.find(sg => sg.id === marker.subgroupId);
-                if (subgroup) {
-                    subgroup.addMarker(marker);
-                }
-            }
-        }
-    });
-    
-    // 6. Update UI and Map
-    updateGroupsList();
-    updateMarkersList();
-    
-    markers.forEach(marker => {
-        addMarkerToMap(marker);
-    });
-    
-    // 7. Save to local storage only if NOT viewing other user's data
-    if (!window.isViewingOtherUser) {
-        // Use appStorageSet directly to avoid circular sync
-        // Reconstruct data object
-         const markersToSave = markers.map(marker => ({
-            id: marker.id,
-            name: marker.name,
-            description: marker.description,
-            lat: marker.lat,
-            lng: marker.lng,
-            groupId: marker.groupId,
-            subgroupId: marker.subgroupId,
-            color: marker.color,
-            icon: marker.icon,
-            imageData: marker.imageData,
-            routeRecords: marker.routeRecords || []
-        }));
-        
-        const groupsToSave = groups.map(group => ({
-            id: group.id,
-            name: group.name,
-            subgroups: group.subgroups.map(subgroup => ({
-                id: subgroup.id,
-                name: subgroup.name,
-                groupId: subgroup.groupId
-            }))
-        }));
-        
-        const data = {
-            groups: groupsToSave,
-            markers: markersToSave,
-            alertDistance: alertDistance,
-            alertInterval: alertInterval,
-            currentGroup: currentGroup ? { id: currentGroup.id, name: currentGroup.name } : null,
-            currentSubgroup: currentSubgroup ? { id: currentSubgroup.id, name: currentSubgroup.name, groupId: currentSubgroup.groupId } : null,
-            enableHighAccuracy: enableHighAccuracy,
-            autoStartTracking: autoStartTracking,
-            locationUpdateFrequency: locationUpdateFrequency,
-            locationTimeout: locationTimeout,
-            markerNotificationsEnabled: markerNotificationsEnabled
-        };
-        
-        appStorageSet('mapAnnotationData', data);
-    }
-};
-
 // 即時定位設定
 let enableHighAccuracy = true; // 高精度模式
 // 是否在中國境內套用座標偏移校正（WGS84→GCJ-02），以貼齊Google在中國區域圖資的偏移
@@ -7828,12 +7647,6 @@ async function saveData() {
         };
         
         await appStorageSet('mapAnnotationData', data);
-        
-        // Sync with Supabase if logged in and not viewing other user's data
-        if (window.supabaseClient && window.supabaseClient.saveToSupabase && !window.isViewingOtherUser && !window.isSyncing) {
-            window.supabaseClient.saveToSupabase(markers, groups);
-        }
-
         console.log('資料儲存成功');
         
         // 顯示儲存成功通知
@@ -7845,6 +7658,11 @@ async function saveData() {
             'success', 
             5000
         );
+
+        // Upload to Supabase if logged in
+        if (window.authManagerUpload) {
+            window.authManagerUpload();
+        }
     } catch (error) {
         console.error('儲存資料失敗:', error);
         showNotification(
@@ -10362,17 +10180,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     
     // 檢查移動設備兼容性
     checkMobileCompatibility();
-
-    // 註冊 Service Worker
-    if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('./sw.js')
-            .then(function(registration) {
-                console.log('ServiceWorker registration successful with scope: ', registration.scope);
-            })
-            .catch(function(err) {
-                console.log('ServiceWorker registration failed: ', err);
-            });
-    }
     
     // 初始化路線監控（調試用）
     setupRouteLineMonitoring();

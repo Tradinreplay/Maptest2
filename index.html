@@ -26,40 +26,8 @@
     <link rel="stylesheet" href="styles.css?v=mobile-debug-version-20240927">
     <link rel="stylesheet" href="rotation.css">
     <link rel="stylesheet" href="path-color.css">
-    <style>
-        /* Force Login Overlay */
-        #loginOverlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(0, 0, 0, 0.9);
-            z-index: 9999; /* Highest priority */
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            flex-direction: column;
-            color: white;
-        }
-        
-        /* Hide map until logged in */
-        body.not-logged-in .container {
-            filter: blur(5px);
-            pointer-events: none;
-        }
-    </style>
 </head>
-<body class="not-logged-in">
-
-    <!-- Blocking Login Overlay -->
-    <div id="loginOverlay">
-        <h1>歡迎使用地圖標註系統</h1>
-        <p>請先登入或註冊以繼續使用</p>
-        <div style="margin-top: 20px;">
-            <button onclick="showAuthModal()" class="primary-btn" style="padding: 15px 30px; font-size: 1.2em;">立即登入 / 註冊</button>
-        </div>
-    </div>
+<body>
 
     <!-- 地圖旋轉開關按鈕（置於 body，避免被地圖層覆蓋） -->
     <button id="rotateBtn" class="rotate-btn" title="地圖旋轉開關" onclick="toggleMapRotation()">
@@ -92,11 +60,6 @@
             <!-- 可移動的設定按鈕 -->
             <button id="floatingSettingsBtn" class="floating-settings-btn" title="設定">
                 <span>⚙️</span>
-            </button>
-            
-            <!-- 使用者按鈕 -->
-            <button id="userBtn" class="user-btn" title="使用者" onclick="showAuthModal()">
-                <span>👤</span>
             </button>
             
             <!-- 可移動的幫助按鈕 -->
@@ -746,6 +709,7 @@
                     </div>
                 </div>
 
+                <!-- 新增：分享功能說明 -->
                 <div class="help-section">
                     <h3>🔗 分享</h3>
                     <div class="help-item">
@@ -796,6 +760,7 @@
                     </div>
                 </div>
 
+                <!-- 新增：手繪路線說明 -->
                 <div class="help-section">
                     <h3>✍️ 手繪路線</h3>
                     <div class="help-item">
@@ -849,58 +814,56 @@
         </div>
     </div>
 
-    <!-- Auth Modal -->
-    <div id="authModal" class="modal">
-        <div class="modal-content auth-content">
-            <span class="close" onclick="closeAuthModal()">&times;</span>
-            <div id="authForms">
-                <div id="loginFormSection">
-                    <h2>登入</h2>
-                    <form id="loginForm" onsubmit="handleLogin(event)">
-                        <label for="loginEmail">Email:</label>
-                        <input type="email" id="loginEmail" required>
-                        <label for="loginPassword">密碼:</label>
-                        <input type="password" id="loginPassword" required>
-                        <button type="submit" class="primary-btn">登入</button>
-                    </form>
-                    <p>還沒有帳號？ <a href="#" onclick="switchAuthMode('register')">註冊</a></p>
+    <!-- 登入/註冊模態框 -->
+    <div id="authModal" class="modal" style="display: block; z-index: 2000;">
+        <div class="modal-content auth-modal-content">
+            <h2>🔐 登入 / 註冊</h2>
+            <p>請先登入以使用完整功能</p>
+            <form id="authForm">
+                <div class="form-group">
+                    <label for="authEmail">Email:</label>
+                    <input type="email" id="authEmail" required placeholder="user@example.com">
                 </div>
-                <div id="registerFormSection" style="display: none;">
-                    <h2>註冊</h2>
-                    <form id="registerForm" onsubmit="handleRegister(event)">
-                        <label for="registerEmail">Email:</label>
-                        <input type="email" id="registerEmail" required>
-                        <label for="registerPassword">密碼:</label>
-                        <input type="password" id="registerPassword" required>
-                        <button type="submit" class="primary-btn">註冊</button>
-                    </form>
-                    <p>已有帳號？ <a href="#" onclick="switchAuthMode('login')">登入</a></p>
+                <div class="form-group">
+                    <label for="authPassword">密碼:</label>
+                    <input type="password" id="authPassword" required placeholder="********">
                 </div>
-                <div id="userProfileSection" style="display: none;">
-                    <h2>使用者資訊</h2>
-                    <p>Email: <span id="userEmailDisplay"></span></p>
-                    <p>Role: <span id="userRoleDisplay"></span></p>
-                    <button onclick="handleLogout()" class="secondary-btn">登出</button>
-                    <div id="adminControls" style="display: none; margin-top: 15px; border-top: 1px solid #ccc; padding-top: 10px;">
-                        <h3>管理員功能</h3>
-                        <button onclick="showAdminPanel()" class="detail-btn">開啟管理員面板</button>
-                    </div>
+                <div class="auth-buttons">
+                    <button type="submit" id="loginBtn" class="primary-btn">登入</button>
+                    <button type="button" id="registerBtn" class="secondary-btn">註冊</button>
                 </div>
-            </div>
+                <p id="authMessage" class="auth-message"></p>
+            </form>
         </div>
     </div>
 
-    <!-- Admin Panel Modal -->
-    <div id="adminPanelModal" class="modal">
-        <div class="modal-content admin-panel-content">
-            <span class="close" onclick="closeAdminPanel()">&times;</span>
-            <h2>管理員面板</h2>
-            <div class="admin-panel-body">
-                <div class="user-list-container">
-                    <h3>使用者列表</h3>
-                    <ul id="adminUserList" class="user-list">
-                        <!-- User list items will be injected here -->
-                    </ul>
+    <!-- 管理者儀表板模態框 -->
+    <div id="adminDashboardModal" class="modal">
+        <div class="modal-content admin-dashboard-content" style="width: 90%; max-width: 1200px; height: 90vh;">
+            <span class="close">&times;</span>
+            <div class="admin-header">
+                <h2>👑 管理者儀表板</h2>
+                <div class="admin-tabs">
+                    <button class="tab-btn active" onclick="switchAdminTab('usersMap')">即時位置監控</button>
+                    <button class="tab-btn" onclick="switchAdminTab('usersMarkers')">使用者標註管理</button>
+                </div>
+            </div>
+            
+            <div id="usersMapTab" class="admin-tab-content active" style="height: calc(100% - 60px);">
+                <div id="adminMap" style="width: 100%; height: 100%;"></div>
+                <div class="admin-overlay-controls">
+                     <div id="activeUsersList" class="active-users-list">
+                         <h4>在線使用者</h4>
+                         <ul id="userListUL"></ul>
+                     </div>
+                </div>
+            </div>
+            
+            <div id="usersMarkersTab" class="admin-tab-content" style="display: none; height: calc(100% - 60px); overflow-y: auto;">
+                <div class="users-data-container">
+                    <h3>使用者標註資料</h3>
+                    <button id="refreshAdminDataBtn" class="refresh-btn">🔄 重新整理</button>
+                    <div id="allUsersDataList" class="data-list"></div>
                 </div>
             </div>
         </div>
@@ -916,88 +879,14 @@
     
     <!-- 壓縮/解壓縮庫（pako） -->
     <script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script>
-
-    <!-- Supabase JS -->
+    
+    <!-- Supabase SDK -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     
-    <!-- Inline Critical UI Logic -->
-    <script>
-        // Define critical UI functions immediately to prevent "undefined" errors
-        // These will be used if auth_manager.js fails to load or is slow
-        
-        // REMOVED: window.supabase = null;  <-- This was destroying the Supabase SDK!
-        
-        // UI Helpers
-        window.showAuthModal = function() {
-            console.log('Global showAuthModal called');
-            const modal = document.getElementById('authModal');
-            if (modal) {
-                modal.style.display = 'block';
-                // Try to update UI if logic script is loaded
-                if (typeof window.updateAuthUI === 'function') {
-                    window.updateAuthUI();
-                }
-                
-                // Check if Supabase is actually ready
-                if (!window.supabase) {
-                    console.warn('Supabase not ready yet');
-                    // We don't block the UI opening, but we warn
-                    const container = modal.querySelector('.modal-content');
-                    if (container && !document.getElementById('supabase-warning')) {
-                        const warning = document.createElement('div');
-                        warning.id = 'supabase-warning';
-                        warning.style.color = 'orange';
-                        warning.style.padding = '10px';
-                        warning.style.textAlign = 'center';
-                        warning.textContent = '系統連線中...請稍候';
-                        container.insertBefore(warning, container.firstChild);
-                    }
-                } else {
-                    const warning = document.getElementById('supabase-warning');
-                    if (warning) warning.remove();
-                }
-            } else {
-                console.error('Auth modal not found in DOM');
-                alert('錯誤：找不到註冊視窗元件');
-            }
-        };
+    <!-- Auth Manager -->
+    <script src="auth_manager.js"></script>
 
-        window.closeAuthModal = function() {
-            const modal = document.getElementById('authModal');
-            if (modal) modal.style.display = 'none';
-        };
-
-        window.switchAuthMode = function(mode) {
-            const loginForm = document.getElementById('loginFormSection');
-            const registerForm = document.getElementById('registerFormSection');
-            if (loginForm && registerForm) {
-                loginForm.style.display = mode === 'login' ? 'block' : 'none';
-                registerForm.style.display = mode === 'register' ? 'block' : 'none';
-            }
-        };
-    </script>
-
-    <script src="auth_manager.js?v=20240117-8" onerror="handleScriptError(this)"></script>
-    
-    <script>
-        function handleScriptError(script) {
-            console.error('Failed to load ' + script.src);
-            // Retry logic...
-            if (!localStorage.getItem('retry_script_load_v2')) {
-                localStorage.setItem('retry_script_load_v2', 'true');
-                if ('serviceWorker' in navigator) {
-                    navigator.serviceWorker.getRegistrations().then(function(registrations) {
-                        for(let registration of registrations) {
-                            registration.unregister();
-                        }
-                        location.reload();
-                    });
-                }
-            }
-        }
-    </script>
-    
-    <script src="script.js?v=mobile-debug-version-20240927-3"></script>
+    <script src="script.js?v=mobile-debug-version-20240927"></script>
     <script src="rotation.js"></script>
     
 
