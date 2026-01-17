@@ -1,5 +1,5 @@
 // Enhanced Service Worker for background notifications
-const CACHE_NAME = 'map-tracker-marker-press-20240927';
+const CACHE_NAME = 'map-tracker-marker-press-20240927-v2';
 const urlsToCache = [
     './',
     './index.html',
