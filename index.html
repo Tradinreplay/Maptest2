@@ -887,9 +887,31 @@
 
     <!-- Supabase JS -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="supabase-client.js?v=20240117-5" onerror="console.error('Failed to load supabase-client.js'); alert('無法載入登入元件，請檢查網路連線');"></script>
+    <script src="auth_manager.js?v=20240117-6" onerror="handleScriptError(this)"></script>
     
     <script>
+        function handleScriptError(script) {
+            console.error('Failed to load ' + script.src);
+            // 嘗試自動修復：註銷 Service Worker 並重新整理（僅限一次）
+            if (!localStorage.getItem('retry_script_load')) {
+                localStorage.setItem('retry_script_load', 'true');
+                if ('serviceWorker' in navigator) {
+                    navigator.serviceWorker.getRegistrations().then(function(registrations) {
+                        for(let registration of registrations) {
+                            registration.unregister();
+                        }
+                        console.log('Unregistered SW, reloading...');
+                        location.reload();
+                    });
+                } else {
+                     alert('無法載入登入元件，請檢查網路連線');
+                }
+            } else {
+                localStorage.removeItem('retry_script_load'); // Reset for next time
+                alert('無法載入登入元件 (auth_manager.js)。請嘗試清除瀏覽器快取或檢查網路。');
+            }
+        }
+
         // Fallback safety check
         window.addEventListener('load', function() {
             if (typeof window.showAuthModal === 'undefined') {

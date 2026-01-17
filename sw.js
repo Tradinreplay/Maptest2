@@ -1,12 +1,12 @@
 // Enhanced Service Worker for background notifications
-const CACHE_NAME = 'map-tracker-marker-press-20240927-v5';
+const CACHE_NAME = 'map-tracker-marker-press-20240927-v6';
 const urlsToCache = [
     './',
     './index.html',
     './script.js',
     './styles.css',
     './sw.js',
-    './supabase-client.js',
+    './auth_manager.js',
     './notification-sound.js',
     './android-integration.js',
     './rotation.js',
