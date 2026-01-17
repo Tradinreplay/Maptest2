@@ -893,7 +893,7 @@
         // Define critical UI functions immediately to prevent "undefined" errors
         // These will be used if auth_manager.js fails to load or is slow
         
-        window.supabase = null; // Initialize global
+        // REMOVED: window.supabase = null;  <-- This was destroying the Supabase SDK!
         
         // UI Helpers
         window.showAuthModal = function() {
@@ -945,7 +945,7 @@
         };
     </script>
 
-    <script src="auth_manager.js?v=20240117-7" onerror="handleScriptError(this)"></script>
+    <script src="auth_manager.js?v=20240117-8" onerror="handleScriptError(this)"></script>
     
     <script>
         function handleScriptError(script) {

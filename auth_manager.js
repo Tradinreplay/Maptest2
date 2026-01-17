@@ -72,7 +72,11 @@ try {
 // Auth Actions
 async function handleRegister(e) {
     e.preventDefault();
-    if (!supabase) return;
+    if (!supabase) {
+        console.error('Supabase client not initialized in handleRegister');
+        alert('系統尚未連線，請重新整理頁面再試');
+        return;
+    }
     
     const emailInput = document.getElementById('registerEmail');
     const passInput = document.getElementById('registerPassword');
@@ -82,20 +86,26 @@ async function handleRegister(e) {
     const password = passInput.value;
     
     try {
+        console.log('Attempting registration for:', email);
         const { data, error } = await supabase.auth.signUp({
             email,
             password,
         });
         
         if (error) {
+            console.error('Registration error details:', error);
             alert('註冊失敗: ' + error.message);
         } else {
-            alert('註冊成功！請檢查您的 Email 進行驗證 (如果已開啟驗證) 或直接登入。');
+            console.log('Registration success:', data);
+            
+            // Explicitly show the admin notification instruction
+            alert('註冊申請已送出！\n\n重要：請務必通知管理員 (tzongbinn01@gmail.com) 進行帳號開通確認。\n\n您也可以檢查您的 Email 進行驗證。');
+            
             switchAuthMode('login');
         }
     } catch (err) {
-        console.error('Register error:', err);
-        alert('註冊發生錯誤');
+        console.error('Register unexpected error:', err);
+        alert('註冊發生未預期的錯誤，請檢查 console log');
     }
 }
 window.handleRegister = handleRegister;
