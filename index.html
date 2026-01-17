@@ -887,7 +887,19 @@
 
     <!-- Supabase JS -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="supabase-client.js?v=20240117-4"></script>
+    <script src="supabase-client.js?v=20240117-5" onerror="console.error('Failed to load supabase-client.js'); alert('無法載入登入元件，請檢查網路連線');"></script>
+    
+    <script>
+        // Fallback safety check
+        window.addEventListener('load', function() {
+            if (typeof window.showAuthModal === 'undefined') {
+                console.warn('showAuthModal is undefined, defining fallback.');
+                window.showAuthModal = function() {
+                    alert('系統正在載入中或載入失敗，請稍後再試或重新整理頁面。');
+                };
+            }
+        });
+    </script>
     
     <script src="script.js?v=mobile-debug-version-20240927-2"></script>
     <script src="rotation.js"></script>
