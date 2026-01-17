@@ -4737,3 +4737,128 @@ input:checked + .slider:before {
         margin-bottom: 8px;
     }
 }
+/* Auth & Admin Styles */
+.user-btn {
+    position: fixed;
+    top: 160px;
+    left: 12px;
+    width: 30.6px;
+    height: 30.6px;
+    border: none;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.9);
+    border: 2px solid rgba(102, 126, 234, 0.3);
+    color: #667eea;
+    font-size: 16px;
+    cursor: pointer;
+    backdrop-filter: blur(10px);
+    z-index: 1002;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.user-btn:hover {
+    background: rgba(102, 126, 234, 0.1);
+    border-color: rgba(102, 126, 234, 0.5);
+    transform: translateY(-2px) scale(1.05);
+    box-shadow: 0 6px 25px rgba(102, 126, 234, 0.15);
+}
+
+.user-btn:active {
+    transform: translateY(-1px) scale(0.98);
+}
+
+/* Auth Modal Content */
+.auth-content {
+    width: clamp(300px, 80vw, 400px) !important;
+}
+
+.auth-content h2 {
+    text-align: center;
+    margin-bottom: 20px;
+    color: #2d3748;
+}
+
+.auth-content form {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.auth-content label {
+    font-weight: 600;
+    margin-bottom: 5px;
+}
+
+.auth-content input {
+    padding: 10px;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    font-size: 16px;
+}
+
+.auth-content button {
+    margin-top: 10px;
+    padding: 12px;
+    font-size: 16px;
+}
+
+.auth-content p {
+    text-align: center;
+    margin-top: 15px;
+    font-size: 14px;
+    color: #718096;
+}
+
+.auth-content a {
+    color: #667eea;
+    text-decoration: none;
+    font-weight: 600;
+}
+
+.auth-content a:hover {
+    text-decoration: underline;
+}
+
+/* Admin Panel */
+.admin-panel-content {
+    width: clamp(320px, 90vw, 600px) !important;
+    max-height: 85vh;
+    padding: 20px;
+}
+
+.user-list-container {
+    max-height: 60vh;
+    overflow-y: auto;
+}
+
+.user-list {
+    list-style: none;
+    padding: 0;
+}
+
+.user-list li {
+    padding: 12px;
+    border-bottom: 1px solid #edf2f7;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.user-list li:hover {
+    background: #f7fafc;
+}
+
+@media (max-width: 768px) {
+    .user-btn {
+        width: 32px;
+        height: 32px;
+        font-size: 14px;
+        left: 12px;
+    }
+}
+
+UPDATE public.profiles 
+SET role = 'admin' 
+WHERE email = '您的注册邮箱';

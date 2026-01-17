@@ -1,11 +1,11 @@
 // Enhanced Service Worker for background notifications
 const CACHE_NAME = 'map-tracker-marker-press-20240927';
 const urlsToCache = [
-    '/',
-    '/index.html',
-    '/script.js',
-    '/styles.css',
-    '/sw.js'
+    './',
+    './index.html',
+    './script.js',
+    './styles.css',
+    './sw.js'
 ];
 
 // Install event - 立即激活新版本

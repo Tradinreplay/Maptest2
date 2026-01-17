@@ -62,6 +62,11 @@
                 <span>⚙️</span>
             </button>
             
+            <!-- 使用者按鈕 -->
+            <button id="userBtn" class="user-btn" title="使用者" onclick="showAuthModal()">
+                <span>👤</span>
+            </button>
+            
             <!-- 可移動的幫助按鈕 -->
             <button id="floatingHelpBtn" class="floating-help-btn" title="功能說明" onclick="showHelpModal()">
                 <span>?</span>
@@ -709,7 +714,6 @@
                     </div>
                 </div>
 
-                <!-- 新增：分享功能說明 -->
                 <div class="help-section">
                     <h3>🔗 分享</h3>
                     <div class="help-item">
@@ -760,7 +764,6 @@
                     </div>
                 </div>
 
-                <!-- 新增：手繪路線說明 -->
                 <div class="help-section">
                     <h3>✍️ 手繪路線</h3>
                     <div class="help-item">
@@ -814,6 +817,63 @@
         </div>
     </div>
 
+    <!-- Auth Modal -->
+    <div id="authModal" class="modal">
+        <div class="modal-content auth-content">
+            <span class="close" onclick="closeAuthModal()">&times;</span>
+            <div id="authForms">
+                <div id="loginFormSection">
+                    <h2>登入</h2>
+                    <form id="loginForm" onsubmit="handleLogin(event)">
+                        <label for="loginEmail">Email:</label>
+                        <input type="email" id="loginEmail" required>
+                        <label for="loginPassword">密碼:</label>
+                        <input type="password" id="loginPassword" required>
+                        <button type="submit" class="primary-btn">登入</button>
+                    </form>
+                    <p>還沒有帳號？ <a href="#" onclick="switchAuthMode('register')">註冊</a></p>
+                </div>
+                <div id="registerFormSection" style="display: none;">
+                    <h2>註冊</h2>
+                    <form id="registerForm" onsubmit="handleRegister(event)">
+                        <label for="registerEmail">Email:</label>
+                        <input type="email" id="registerEmail" required>
+                        <label for="registerPassword">密碼:</label>
+                        <input type="password" id="registerPassword" required>
+                        <button type="submit" class="primary-btn">註冊</button>
+                    </form>
+                    <p>已有帳號？ <a href="#" onclick="switchAuthMode('login')">登入</a></p>
+                </div>
+                <div id="userProfileSection" style="display: none;">
+                    <h2>使用者資訊</h2>
+                    <p>Email: <span id="userEmailDisplay"></span></p>
+                    <p>Role: <span id="userRoleDisplay"></span></p>
+                    <button onclick="handleLogout()" class="secondary-btn">登出</button>
+                    <div id="adminControls" style="display: none; margin-top: 15px; border-top: 1px solid #ccc; padding-top: 10px;">
+                        <h3>管理員功能</h3>
+                        <button onclick="showAdminPanel()" class="detail-btn">開啟管理員面板</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Admin Panel Modal -->
+    <div id="adminPanelModal" class="modal">
+        <div class="modal-content admin-panel-content">
+            <span class="close" onclick="closeAdminPanel()">&times;</span>
+            <h2>管理員面板</h2>
+            <div class="admin-panel-body">
+                <div class="user-list-container">
+                    <h3>使用者列表</h3>
+                    <ul id="adminUserList" class="user-list">
+                        <!-- User list items will be injected here -->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     
     <!-- 通知音效腳本 -->
@@ -824,7 +884,10 @@
     
     <!-- 壓縮/解壓縮庫（pako） -->
     <script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script>
-    
+
+    <!-- Supabase JS -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="supabase-client.js"></script>
     
     <script src="script.js?v=mobile-debug-version-20240927"></script>
     <script src="rotation.js"></script>
