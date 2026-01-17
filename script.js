@@ -78,7 +78,58 @@ function setupRouteLineMonitoring() {
     }
 }
 
-// Global function to update app state from external sources (e.g. Supabase sync)
+// Add to global scope
+window.showUserLocationOnMap = function(lat, lng, title) {
+    if (!map) return;
+    
+    // Remove existing admin viewed location marker
+    if (window.adminViewLocationMarker) {
+        map.removeLayer(window.adminViewLocationMarker);
+    }
+    
+    const icon = L.divIcon({
+        className: 'custom-div-icon',
+        html: `<div style="background-color: #ff9800; width: 15px; height: 15px; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 10px rgba(0,0,0,0.5);"></div>`,
+        iconSize: [20, 20],
+        iconAnchor: [10, 10]
+    });
+    
+    window.adminViewLocationMarker = L.marker([lat, lng], {icon: icon})
+        .bindPopup(title)
+        .addTo(map)
+        .openPopup();
+        
+    map.setView([lat, lng], 15);
+};
+
+// Location Update Logic
+let lastUploadTime = 0;
+const UPLOAD_INTERVAL = 30000; // 30 seconds
+
+function checkAndUploadLocation(lat, lng) {
+    const now = Date.now();
+    if (now - lastUploadTime > UPLOAD_INTERVAL) {
+        if (window.updateUserLocation) {
+            window.updateUserLocation(lat, lng);
+            lastUploadTime = now;
+            // console.log('Location uploaded');
+        }
+    }
+}
+
+// Hook into existing location updates (assuming updateCurrentLocation or similar is used)
+// We'll use a Proxy or just find the geolocation success callback.
+// Since I cannot see the full file, I will append a watcher setup at the end of DOMContentLoaded or init.
+
+document.addEventListener('DOMContentLoaded', () => {
+    // Start a separate interval for uploading location if we have a position
+    setInterval(() => {
+        if (currentPosition) {
+             checkAndUploadLocation(currentPosition.lat, currentPosition.lng);
+        }
+    }, 5000); // Check every 5 seconds if we need to upload (logic inside checkAndUploadLocation handles the 30s limit)
+});
+
 window.updateAppState = function(newMarkers, newGroups) {
     // 1. Clear existing markers from map
     if (markers && markers.length > 0) {

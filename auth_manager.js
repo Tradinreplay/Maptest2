@@ -339,9 +339,13 @@ async function loadUserMarkersForAdmin(userId, userEmail) {
     if (window.showNotification) window.showNotification(`正在載入使用者 ${userEmail} 的資料...`, 'info');
     closeAdminPanel();
     
+    // Fetch Markers and Groups
     const { data: markers, error } = await supabase.from('user_markers').select('*').eq('user_id', userId);
     const { data: groups, error: gError } = await supabase.from('user_groups').select('*').eq('user_id', userId);
     
+    // Fetch Last Known Location
+    const { data: locationData, error: lError } = await supabase.from('user_locations').select('*').eq('user_id', userId).single();
+
     if (error || gError) {
         if (window.showNotification) window.showNotification('載入使用者資料失敗', 'error');
         return;
@@ -372,8 +376,19 @@ async function loadUserMarkersForAdmin(userId, userEmail) {
         window.isViewingOtherUser = true;
         window.isSyncing = true; // Also prevent sync loop just in case
         window.updateAppState(newMarkers, newGroups);
+        
+        // Show User Location if available
+        if (locationData) {
+            console.log('User location found:', locationData);
+            if (window.showUserLocationOnMap) {
+                window.showUserLocationOnMap(locationData.lat, locationData.lng, `使用者 ${userEmail} 的最後位置`);
+            }
+        } else {
+             if (window.showNotification) window.showNotification('該使用者沒有位置紀錄', 'info');
+        }
+
         window.isSyncing = false;
-        if (window.showNotification) window.showNotification(`已顯示使用者 ${userEmail} 的 ${newMarkers.length} 個標註點`, 'success');
+        if (window.showNotification) window.showNotification(`已顯示使用者 ${userEmail} 的資料`, 'success');
     }
 }
 
