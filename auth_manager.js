@@ -8,18 +8,19 @@ let currentUser = null;
 let userProfile = null;
 
 // Define UI functions FIRST so they are available even if init fails
+// NOTE: These are now also defined inline in index.html for robustness.
+// We keep them here to ensure full functionality (like updateAuthUI calls) is bound correctly if this loads later.
+
 function showAuthModal() {
-    console.log('showAuthModal called');
-    if (!supabase) {
-        alert('系統連線初始化失敗，請檢查網路連線或重新整理頁面。');
-        return;
-    }
+    console.log('showAuthModal (script) called');
     const modal = document.getElementById('authModal');
     if (modal) {
         modal.style.display = 'block';
-        updateAuthUI();
-    } else {
-        console.error('Auth modal not found');
+        if (window.updateAuthUI) updateAuthUI();
+        
+        // Remove warning if exists
+        const warning = document.getElementById('supabase-warning');
+        if (warning) warning.remove();
     }
 }
 window.showAuthModal = showAuthModal;

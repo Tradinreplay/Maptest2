@@ -887,40 +887,82 @@
 
     <!-- Supabase JS -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="auth_manager.js?v=20240117-6" onerror="handleScriptError(this)"></script>
+    
+    <!-- Inline Critical UI Logic -->
+    <script>
+        // Define critical UI functions immediately to prevent "undefined" errors
+        // These will be used if auth_manager.js fails to load or is slow
+        
+        window.supabase = null; // Initialize global
+        
+        // UI Helpers
+        window.showAuthModal = function() {
+            console.log('Global showAuthModal called');
+            const modal = document.getElementById('authModal');
+            if (modal) {
+                modal.style.display = 'block';
+                // Try to update UI if logic script is loaded
+                if (typeof window.updateAuthUI === 'function') {
+                    window.updateAuthUI();
+                }
+                
+                // Check if Supabase is actually ready
+                if (!window.supabase) {
+                    console.warn('Supabase not ready yet');
+                    // We don't block the UI opening, but we warn
+                    const container = modal.querySelector('.modal-content');
+                    if (container && !document.getElementById('supabase-warning')) {
+                        const warning = document.createElement('div');
+                        warning.id = 'supabase-warning';
+                        warning.style.color = 'orange';
+                        warning.style.padding = '10px';
+                        warning.style.textAlign = 'center';
+                        warning.textContent = '系統連線中...請稍候';
+                        container.insertBefore(warning, container.firstChild);
+                    }
+                } else {
+                    const warning = document.getElementById('supabase-warning');
+                    if (warning) warning.remove();
+                }
+            } else {
+                console.error('Auth modal not found in DOM');
+                alert('錯誤：找不到註冊視窗元件');
+            }
+        };
+
+        window.closeAuthModal = function() {
+            const modal = document.getElementById('authModal');
+            if (modal) modal.style.display = 'none';
+        };
+
+        window.switchAuthMode = function(mode) {
+            const loginForm = document.getElementById('loginFormSection');
+            const registerForm = document.getElementById('registerFormSection');
+            if (loginForm && registerForm) {
+                loginForm.style.display = mode === 'login' ? 'block' : 'none';
+                registerForm.style.display = mode === 'register' ? 'block' : 'none';
+            }
+        };
+    </script>
+
+    <script src="auth_manager.js?v=20240117-7" onerror="handleScriptError(this)"></script>
     
     <script>
         function handleScriptError(script) {
             console.error('Failed to load ' + script.src);
-            // 嘗試自動修復：註銷 Service Worker 並重新整理（僅限一次）
-            if (!localStorage.getItem('retry_script_load')) {
-                localStorage.setItem('retry_script_load', 'true');
+            // Retry logic...
+            if (!localStorage.getItem('retry_script_load_v2')) {
+                localStorage.setItem('retry_script_load_v2', 'true');
                 if ('serviceWorker' in navigator) {
                     navigator.serviceWorker.getRegistrations().then(function(registrations) {
                         for(let registration of registrations) {
                             registration.unregister();
                         }
-                        console.log('Unregistered SW, reloading...');
                         location.reload();
                     });
-                } else {
-                     alert('無法載入登入元件，請檢查網路連線');
                 }
-            } else {
-                localStorage.removeItem('retry_script_load'); // Reset for next time
-                alert('無法載入登入元件 (auth_manager.js)。請嘗試清除瀏覽器快取或檢查網路。');
             }
         }
-
-        // Fallback safety check
-        window.addEventListener('load', function() {
-            if (typeof window.showAuthModal === 'undefined') {
-                console.warn('showAuthModal is undefined, defining fallback.');
-                window.showAuthModal = function() {
-                    alert('系統正在載入中或載入失敗，請稍後再試或重新整理頁面。');
-                };
-            }
-        });
     </script>
     
     <script src="script.js?v=mobile-debug-version-20240927-2"></script>
