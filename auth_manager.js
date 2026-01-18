@@ -3,8 +3,8 @@
 // Supabase Integration and Authentication Logic
 
 // Configuration - USER MUST REPLACE THESE VALUES
-const SUPABASE_URL = 'YOUR_SUPABASE_URL';
-const SUPABASE_KEY = 'YOUR_SUPABASE_ANON_KEY';
+const SUPABASE_URL = 'https://whsczlmadjgmtbmtlwin.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_ftUJ1QsXR3_Xx0zvGJhpsQ_KwiQI0qB';
 
 // Default Admin Credentials (as requested)
 const DEFAULT_ADMIN_EMAIL = 'tzongbinn@gmail.com';
